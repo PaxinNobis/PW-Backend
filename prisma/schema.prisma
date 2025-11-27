@@ -1,0 +1,392 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Modelo de Usuario (basado en types/auth.ts)
+model User {
+  id       String   @id @default(uuid())
+  email    String   @unique
+  name     String
+  password String // Contraseña hasheada
+
+  // --- Datos de Perfil ---
+  bio       String? // Biografía del usuario
+  pfp       String? // URL de la foto de perfil
+  online    Boolean @default(false) // Estado online/offline
+  lastSeen  DateTime? // Última vez visto
+
+  // --- Datos de Espectador ---
+  level  Int? // Nivel de espectador (RF010)
+  points Int? // Puntos acumulados (RF010)
+  coins  Int? // Saldo de monedas (RF009)
+
+  // --- Datos de Streamer ---
+  streamingHours Int? @default(0) // Horas de streaming acumuladas
+  currentLevelId String? // Nivel actual del streamer
+  currentLevel   StreamerLevel? @relation(fields: [currentLevelId], references: [id])
+
+  // --- Relaciones de Streamer ---
+  stream           Stream? // Un usuario (streamer) tiene un stream
+  analytics        Analytics? // Analíticas del streamer
+  customGifts      Gift[] // Regalos personalizados del streamer
+  loyaltyLevels    LoyaltyLevel[] // Niveles de lealtad del streamer
+  receivedMessages ChatMessage[] @relation("ChatMessages") // Mensajes recibidos en su chat
+  createdMedals    Medal[] @relation("CreatedMedals") // Medallas creadas por el streamer
+  clips            Clip[] // Clips del streamer
+
+  // --- Relaciones Sociales y de Chat ---
+  following    User[]        @relation("UserFollows") // A quién sigue este usuario
+  followedBy   User[]        @relation("UserFollows") // Quién sigue a este usuario
+  sentMessages ChatMessage[] @relation("SentMessages") // Mensajes que este usuario envía
+
+  // --- Relaciones de Puntos y Medallas ---
+  userPoints       UserPoints[] // Puntos por streamer
+  streamerPoints   UserPoints[] @relation("StreamerPoints") // Puntos recibidos como streamer
+  pointsHistory    PointsHistory[] // Historial de puntos
+  earnedMedals     UserMedal[] // Medallas ganadas
+  
+  // --- Relaciones de Amigos ---
+  friendships      Friendship[] @relation("UserFriendships")
+  friendOf         Friendship[] @relation("FriendOf")
+  sentRequests     FriendRequest[] @relation("SentRequests")
+  receivedRequests FriendRequest[] @relation("ReceivedRequests")
+
+  // --- Relaciones de Notificaciones ---
+  notifications    Notification[]
+
+  // --- Relaciones de Transacciones ---
+  transactions     Transaction[]
+
+  // --- Relaciones de Viewers ---
+  activeViewing    ActiveViewer[]
+
+  // --- Redes Sociales ---
+  socialLinks      UserSocialLinks?
+
+  @@map("users")
+}
+
+// Modelo de Stream (basado en Objects_DataTypes.tsx)
+model Stream {
+  id         String  @id @default(uuid())
+  title      String
+  thumbnail  String
+  viewers    Int     @default(0)
+  isLive     Boolean @default(false)
+
+  streamer   User   @relation(fields: [streamerId], references: [id])
+  streamerId String @unique // Un stream pertenece a un solo User
+
+  game   Game   @relation(fields: [gameId], references: [id])
+  gameId String
+
+  tags           Tag[]           @relation("StreamTags")
+  chatMessages   ChatMessage[]
+  activeViewers  ActiveViewer[]
+
+  @@map("streams")
+}
+
+// Modelo de Juego (basado en Objects_DataTypes.tsx)
+model Game {
+  id      String   @id @default(uuid())
+  name    String   @unique
+  photo   String
+  streams Stream[]
+  tags    Tag[]    @relation("GameTags") // Tags asociados al juego
+
+  @@map("games")
+}
+
+// Modelo de Tag (basado en Objects_DataTypes.tsx)
+model Tag {
+  id      String   @id @default(uuid())
+  name    String   @unique
+  streams Stream[] @relation("StreamTags")
+  games   Game[]   @relation("GameTags")
+
+  @@map("tags")
+}
+
+// Modelo de Mensaje de Chat (basado en ChatMessage.tsx)
+model ChatMessage {
+  id        String   @id @default(uuid())
+  text      String
+  createdAt DateTime @default(now())
+
+  // A qué stream pertenece
+  stream   Stream @relation(fields: [streamId], references: [id])
+  streamId String
+
+  // Quién envió el mensaje
+  author   User   @relation("SentMessages", fields: [authorId], references: [id])
+  authorId String
+
+  // A qué chat pertenece (el chat del streamer dueño)
+  streamOwner   User   @relation("ChatMessages", fields: [streamOwnerId], references: [id])
+  streamOwnerId String
+
+  @@map("chat_messages")
+}
+
+// --- Modelos del Panel de Creador ---
+
+// Para Analiticas.tsx
+model Analytics {
+  id                String @id @default(uuid())
+  horasTransmitidas Float  @default(0)
+  monedasRecibidas  Int    @default(0)
+
+  streamer   User   @relation(fields: [streamerId], references: [id])
+  streamerId String @unique
+
+  @@map("analytics")
+}
+
+// Para GestionRegalos.tsx
+model Gift {
+  id     String @id @default(uuid())
+  nombre String
+  costo  Int // Costo en DogeCoins
+  puntos Int // Puntos que otorga
+
+  streamer   User   @relation(fields: [streamerId], references: [id])
+  streamerId String
+
+  @@map("gifts")
+}
+
+// Para ConfiguracionNiveles.tsx y FilaNivel.tsx
+model LoyaltyLevel {
+  id               String @id @default(uuid())
+  nombre           String
+  puntosRequeridos Int
+  recompensa       String
+
+  streamer   User   @relation(fields: [streamerId], references: [id])
+  streamerId String
+
+  @@map("loyalty_levels")
+}
+
+// --- Modelos para Pagos ---
+
+// Para PackMonedas.tsx y CardMoneda.tsx
+model CoinPack {
+  id       String @id @default(uuid())
+  nombre   String // Ej: "Starter pack"
+  valor    Int // Cantidad de DogeCoins (ej: 30)
+  en_soles Float // Precio en PEN (ej: 1.50)
+
+  @@map("coin_packs")
+}
+
+// --- Modelos de Viewers ---
+
+model ActiveViewer {
+  streamId      String
+  userId        String
+  joinedAt      DateTime @default(now())
+  lastHeartbeat DateTime @default(now())
+
+  stream Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([streamId, userId])
+  @@index([streamId])
+  @@index([lastHeartbeat])
+  @@map("active_viewers")
+}
+
+// --- Modelos de Puntos ---
+
+model UserPoints {
+  userId      String
+  streamerId  String
+  points      Int      @default(0)
+  lastUpdated DateTime @default(now())
+
+  user     User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  streamer User @relation("StreamerPoints", fields: [streamerId], references: [id], onDelete: Cascade)
+
+  @@id([userId, streamerId])
+  @@index([userId])
+  @@map("user_points")
+}
+
+model PointsHistory {
+  id         String   @id @default(uuid())
+  userId     String
+  streamerId String
+  action     String // message, donation, subscription, etc.
+  points     Int
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("points_history")
+}
+
+// --- Modelos de Medallas ---
+
+model Medal {
+  id          String @id @default(uuid())
+  streamerId  String
+  level       String
+  name        String
+  description String
+  minMessages Int    @default(0)
+  minPoints   Int    @default(0)
+  createdAt   DateTime @default(now())
+
+  streamer     User        @relation("CreatedMedals", fields: [streamerId], references: [id], onDelete: Cascade)
+  userMedals   UserMedal[]
+
+  @@index([streamerId])
+  @@map("medals")
+}
+
+model UserMedal {
+  userId     String
+  medalId    String
+  streamerId String
+  earnedAt   DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  medal Medal @relation(fields: [medalId], references: [id], onDelete: Cascade)
+
+  @@id([userId, medalId])
+  @@index([userId])
+  @@map("user_medals")
+}
+
+// --- Modelos de Niveles de Streamer ---
+
+model StreamerLevel {
+  id           String @id @default(uuid())
+  name         String
+  minFollowers Int
+  maxFollowers Int
+  minHours     Int
+  maxHours     Int
+  rewards      String
+  levelOrder   Int    @unique
+
+  users User[]
+
+  @@map("streamer_levels")
+}
+
+// --- Modelos de Clips ---
+
+model Clip {
+  id         String   @id @default(uuid())
+  streamerId String
+  url        String
+  title      String
+  thumbnail  String
+  views      Int      @default(0)
+  duration   Int // en segundos
+  createdAt  DateTime @default(now())
+
+  streamer User @relation(fields: [streamerId], references: [id], onDelete: Cascade)
+
+  @@index([streamerId, createdAt])
+  @@index([views])
+  @@map("clips")
+}
+
+// --- Modelos de Amigos ---
+
+model Friendship {
+  userId    String
+  friendId  String
+  createdAt DateTime @default(now())
+
+  user   User @relation("UserFriendships", fields: [userId], references: [id], onDelete: Cascade)
+  friend User @relation("FriendOf", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@id([userId, friendId])
+  @@index([userId])
+  @@map("friendships")
+}
+
+model FriendRequest {
+  id          String    @id @default(uuid())
+  fromUserId  String
+  toUserId    String
+  status      String    @default("pending") // pending, accepted, rejected
+  createdAt   DateTime  @default(now())
+  respondedAt DateTime?
+
+  fromUser User @relation("SentRequests", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User @relation("ReceivedRequests", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([toUserId, status])
+  @@map("friend_requests")
+}
+
+// --- Modelos de Notificaciones ---
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String // friend_request, new_follower, stream_live, etc.
+  title     String
+  message   String
+  data      Json?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, read])
+  @@map("notifications")
+}
+
+// --- Modelos de Transacciones ---
+
+model Transaction {
+  id            String    @id @default(uuid())
+  userId        String
+  sessionId     String?
+  amount        Float
+  coins         Int
+  status        String // pending, completed, failed, refunded
+  paymentMethod String?
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("transactions")
+}
+
+// --- Modelos de Redes Sociales ---
+
+model UserSocialLinks {
+  userId        String @id
+  xLink         String?
+  youtubeLink   String?
+  instagramLink String?
+  tiktokLink    String?
+  discordLink   String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_social_links")
+}
+
+// --- Enums ---
