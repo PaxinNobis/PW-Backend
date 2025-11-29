@@ -1,6 +1,7 @@
 import { WebSocket, WebSocketServer } from 'ws';
 import { PrismaClient } from '@prisma/client';
 import jwt from 'jsonwebtoken';
+import { getUserPersistedLevel } from '../utils/level-lookup.utils';
 
 const prisma = new PrismaClient();
 
@@ -12,6 +13,8 @@ interface JwtPayload {
 interface WebSocketClient extends WebSocket {
   userId?: string;
   userName?: string;
+  userLevel?: number;
+  userLevelName?: string;
   streamId?: string;
   hasReceivedHistory?: boolean;
 }
@@ -35,6 +38,9 @@ export const handleWebSocketConnection = (ws: WebSocketClient) => {
           break;
         case 'chat':
           await handleChatMessage(ws, message);
+          break;
+        case 'typing':
+          handleTyping(ws, message);
           break;
         case 'leave':
           handleLeave(ws);
@@ -105,6 +111,7 @@ async function handleJoin(ws: WebSocketClient, message: any) {
       select: {
         id: true,
         name: true,
+        level: true,
       },
     });
 
@@ -119,9 +126,14 @@ async function handleJoin(ws: WebSocketClient, message: any) {
       return;
     }
 
+    // Obtener nivel persistido del usuario
+    const levelData = await getUserPersistedLevel(prisma, user.id, stream.streamerId);
+
     // Guardar información en el WebSocket
     ws.userId = user.id;
     ws.userName = user.name;
+    ws.userLevel = levelData.level;
+    ws.userLevelName = levelData.name;
     ws.streamId = stream.id;
 
     // Agregar a la sala de chat
@@ -150,13 +162,31 @@ async function handleJoin(ws: WebSocketClient, message: any) {
     participants.set(user.id, ws);
     room.add(ws);
 
-    // Enviar confirmación
+    // Enviar confirmación al usuario
     ws.send(JSON.stringify({
       type: 'joined',
       message: 'Te has unido al chat',
       streamId: stream.id,
       streamerName: stream.streamer.name,
     }));
+
+    // Broadcast: Usuario se unió
+    broadcastToRoom(stream.id, {
+      type: 'viewer_joined',
+      viewer: {
+        id: user.id,
+        name: user.name,
+        level: ws.userLevel,
+        levelName: ws.userLevelName,
+      },
+      newCount: participants.size,
+    });
+
+    // Broadcast: Actualizar contador
+    broadcastToRoom(stream.id, {
+      type: 'viewer_count_update',
+      count: participants.size,
+    });
 
     // Enviar historial de mensajes recientes
     if (!ws.hasReceivedHistory) {
@@ -167,6 +197,7 @@ async function handleJoin(ws: WebSocketClient, message: any) {
             select: {
               id: true,
               name: true,
+              level: true,
             },
           },
         },
@@ -215,6 +246,9 @@ async function handleChatMessage(ws: WebSocketClient, message: any) {
       return;
     }
 
+    // Obtener nivel persistido del usuario
+    const levelData = await getUserPersistedLevel(prisma, ws.userId, stream.streamerId);
+
     // Guardar mensaje en la base de datos
     const chatMessage = await prisma.chatMessage.create({
       data: {
@@ -228,36 +262,48 @@ async function handleChatMessage(ws: WebSocketClient, message: any) {
           select: {
             id: true,
             name: true,
+            level: true, // Mantenemos level global por si acaso, pero usaremos el calculado
           },
         },
       },
     });
 
     // Broadcast del mensaje a todos los usuarios en la sala
-    const room = chatRooms.get(ws.streamId);
-    if (room) {
-      const messageData = JSON.stringify({
-        type: 'message',
-        message: {
-          id: chatMessage.id,
-          text: chatMessage.text,
-          createdAt: chatMessage.createdAt,
-          author: chatMessage.author,
+    broadcastToRoom(ws.streamId, {
+      type: 'message',
+      message: {
+        id: chatMessage.id,
+        text: chatMessage.text,
+        createdAt: chatMessage.createdAt,
+        author: {
+          ...chatMessage.author,
+          level: levelData.level,
+          levelName: levelData.name,
         },
-      });
-
-      room.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(messageData);
-        }
-      });
-    }
+      },
+    });
 
     console.log(`Mensaje de ${ws.userName} en stream ${ws.streamId}: ${text}`);
   } catch (error) {
     console.error('Error al enviar mensaje de chat:', error);
     ws.send(JSON.stringify({ type: 'error', message: 'Error al enviar mensaje' }));
   }
+}
+
+// Función para manejar evento de "escribiendo"
+function handleTyping(ws: WebSocketClient, message: any) {
+  if (!ws.streamId || !ws.userName) return;
+
+  const { isTyping } = message;
+
+  broadcastToRoom(ws.streamId, {
+    type: 'typing',
+    user: {
+      id: ws.userId,
+      name: ws.userName,
+    },
+    isTyping: !!isTyping,
+  }, ws); // Excluir al remitente
 }
 
 // Función para salir del chat
@@ -284,5 +330,32 @@ function handleLeave(ws: WebSocketClient) {
 
     ws.hasReceivedHistory = false;
     console.log(`Usuario ${ws.userName} salió del chat ${ws.streamId}`);
+
+    // Broadcast: Usuario salió y nuevo contador
+    const currentCount = roomParticipants.get(ws.streamId)?.size || 0;
+
+    broadcastToRoom(ws.streamId, {
+      type: 'viewer_left',
+      viewerId: ws.userId,
+      newCount: currentCount,
+    });
+
+    broadcastToRoom(ws.streamId, {
+      type: 'viewer_count_update',
+      count: currentCount,
+    });
+  }
+}
+
+// Helper para broadcast
+function broadcastToRoom(streamId: string, data: any, excludeClient?: WebSocketClient) {
+  const room = chatRooms.get(streamId);
+  if (room) {
+    const messageData = JSON.stringify(data);
+    room.forEach((client) => {
+      if (client !== excludeClient && client.readyState === WebSocket.OPEN) {
+        client.send(messageData);
+      }
+    });
   }
 }

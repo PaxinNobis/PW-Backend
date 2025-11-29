@@ -472,6 +472,36 @@ Authorization: Bearer <token>
 
 ---
 
+## 🎥 Streamer (`/api/streamer`)
+
+### GET `/api/streamer/:streamerId/gifts`
+Obtener lista de regalos de un streamer específico.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Params:**
+- `streamerId`: ID del streamer
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "gifts": [
+    {
+      "id": "string",
+      "nombre": "string",
+      "costo": "number",
+      "puntos": "number"
+    }
+  ]
+}
+```
+
+---
+
 ## 💰 Pagos (`/api/payment`)
 
 ### GET `/api/payment/coin-packs`

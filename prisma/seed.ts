@@ -60,7 +60,7 @@ async function main() {
   // Crear usuarios streamers desde el JSON
   const hashedPassword = await bcrypt.hash('password123', 10);
   const uniqueStreamers = new Map();
-  
+
   streamsData.forEach((stream: any) => {
     if (!uniqueStreamers.has(stream.streamer.nickname)) {
       uniqueStreamers.set(stream.streamer.nickname, stream.streamer);
@@ -87,15 +87,25 @@ async function main() {
   // Crear streams desde el JSON - asegurar que cada streamer tenga solo un stream
   const usedStreamers = new Set<string>();
   let streamsCreated = 0;
-  
+
   for (const streamData of streamsData) {
     const streamer = allStreamers.find(s => s.name === streamData.streamer.nickname);
     const game = allGames.find(g => g.name === streamData.game.name);
-    
+
     // Solo crear stream si el streamer no tiene uno ya
     if (streamer && game && !usedStreamers.has(streamer.id)) {
+      // Verificar si ya existe en la BD
+      const existingStream = await prisma.stream.findUnique({
+        where: { streamerId: streamer.id }
+      });
+
+      if (existingStream) {
+        usedStreamers.add(streamer.id);
+        continue;
+      }
+
       usedStreamers.add(streamer.id);
-      
+
       // Buscar los tags del stream
       const streamTags: { id: string }[] = [];
       if (streamData.game.tags) {
@@ -120,9 +130,9 @@ async function main() {
           },
         },
       });
-      
+
       streamsCreated++;
-      
+
       // Limitar a 10 streams
       if (streamsCreated >= 10) break;
     }
@@ -136,10 +146,14 @@ async function main() {
       horasTransmitidas: Math.floor(Math.random() * 300) + 100,
       monedasRecibidas: Math.floor(Math.random() * 20000) + 5000,
     })),
+    skipDuplicates: true,
   });
   console.log(`Analíticas creadas: ${allStreamers.length}`);
-  
+
   // Crear paquetes de monedas
+  // Limpiar paquetes existentes
+  await prisma.coinPack.deleteMany({});
+
   await prisma.coinPack.createMany({
     data: [
       { nombre: 'Starter Pack', valor: 30, en_soles: 1.5 },
@@ -147,9 +161,30 @@ async function main() {
       { nombre: 'Premium Pack', valor: 500, en_soles: 20.0 },
       { nombre: 'Ultimate Pack', valor: 1000, en_soles: 35.0 },
     ],
+    skipDuplicates: true,
   });
 
   console.log('Paquetes de monedas creados: 4');
+
+  // Crear regalos por defecto para cada streamer
+  let giftsCreated = 0;
+  for (const streamer of allStreamers) {
+    // Limpiar regalos existentes para evitar duplicados
+    await prisma.gift.deleteMany({
+      where: { streamerId: streamer.id }
+    });
+
+    await prisma.gift.createMany({
+      data: [
+        { nombre: 'Rosa', costo: 10, puntos: 5, streamerId: streamer.id },
+        { nombre: 'GG', costo: 50, puntos: 25, streamerId: streamer.id },
+        { nombre: 'Cofre', costo: 100, puntos: 50, streamerId: streamer.id },
+        { nombre: 'Dragón', costo: 1000, puntos: 500, streamerId: streamer.id },
+      ],
+    });
+    giftsCreated += 4;
+  }
+  console.log(`Regalos creados: ${giftsCreated}`);
 
   console.log('Seed completado exitosamente!');
 }

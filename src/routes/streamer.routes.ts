@@ -23,13 +23,13 @@ const LEVELS = [
 // Función auxiliar para calcular el nivel actual
 function calculateLevel(followers: number, hours: number) {
   // Buscar el nivel que cumple AMBAS condiciones
-  const level = LEVELS.find(l => 
-    followers >= l.minFollowers && 
+  const level = LEVELS.find(l =>
+    followers >= l.minFollowers &&
     followers <= l.maxFollowers &&
-    hours >= l.minHours && 
+    hours >= l.minHours &&
     hours <= l.maxHours
   );
-  
+
   return level || LEVELS[0]; // Default: Astronauta Novato
 }
 
@@ -72,7 +72,7 @@ router.get('/level', async (req: Request, res: Response) => {
     const nextLevel = getNextLevel(currentLevel.levelOrder);
 
     // Calcular progreso
-    const hoursProgress = nextLevel 
+    const hoursProgress = nextLevel
       ? Math.min(100, ((hours - currentLevel.minHours) / (nextLevel.minHours - currentLevel.minHours)) * 100)
       : 100;
 
@@ -251,6 +251,59 @@ router.get('/stats', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error al obtener estadísticas:', error);
     res.status(500).json({ error: 'Error al obtener estadísticas' });
+  }
+});
+
+// GET /api/streamer/:streamerId/gifts - Obtener regalos de un streamer específico
+router.get('/:streamerId/gifts', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'No autenticado' });
+    }
+
+    const { streamerId } = req.params;
+
+    const gifts = await prisma.gift.findMany({
+      where: { streamerId },
+      select: {
+        id: true,
+        nombre: true,
+        costo: true,
+        puntos: true,
+      },
+      orderBy: { costo: 'asc' },
+    });
+
+    return res.status(200).json({ success: true, gifts });
+  } catch (error) {
+    console.error('Error al obtener regalos del streamer:', error);
+    res.status(500).json({ error: 'Error al obtener regalos del streamer' });
+  }
+});
+
+// GET /api/streamer/:streamerId/loyalty-levels - Obtener niveles de lealtad de un streamer específico (Público)
+router.get('/:streamerId/loyalty-levels', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'No autenticado' });
+    }
+
+    const { streamerId } = req.params;
+
+    const levels = await prisma.loyaltyLevel.findMany({
+      where: { streamerId },
+      orderBy: { puntosRequeridos: 'asc' },
+      select: {
+        nombre: true,
+        puntosRequeridos: true,
+        recompensa: true,
+      }
+    });
+
+    return res.status(200).json({ success: true, levels });
+  } catch (error) {
+    console.error('Error al obtener niveles de lealtad del streamer:', error);
+    res.status(500).json({ error: 'Error al obtener niveles de lealtad del streamer' });
   }
 });
 

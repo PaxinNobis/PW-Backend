@@ -22,6 +22,8 @@ import notificationRoutes from './routes/notification.routes';
 import clipRoutes from './routes/clip.routes';
 import friendRoutes from './routes/friend.routes';
 import streamerRoutes from './routes/streamer.routes';
+import chatRoutes from './routes/chat.routes';
+import giftRoutes from './routes/gift.routes';
 
 // Importar servicio de WebSocket
 import { handleWebSocketConnection } from './services/websocket.service';
@@ -58,6 +60,8 @@ app.use('/api/notification', authMiddleware, notificationRoutes); // Protegida
 app.use('/api/clip', clipRoutes); // Parcialmente protegida
 app.use('/api/friend', authMiddleware, friendRoutes); // Protegida
 app.use('/api/streamer', authMiddleware, streamerRoutes); // Protegida
+app.use('/api/chat', authMiddleware, chatRoutes); // Protegida
+app.use('/api/gifts', authMiddleware, giftRoutes); // Protegida
 
 // --- Servidor WebSocket ---
 wss.on('connection', handleWebSocketConnection);

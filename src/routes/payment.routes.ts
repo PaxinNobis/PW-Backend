@@ -138,4 +138,86 @@ router.post('/webhook', async (req: Request, res: Response) => {
   return res.status(200).json({ success: true, received: true });
 });
 
+// GET /api/payment/transaction-history - Obtener historial de transacciones
+router.get('/transaction-history', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'No autenticado' });
+    }
+
+    const { page = '1', limit = '10', status } = req.query;
+    const pageNum = parseInt(page as string);
+    const limitNum = parseInt(limit as string);
+    const skip = (pageNum - 1) * limitNum;
+
+    const where: any = { userId: req.user.userId };
+    if (status) {
+      where.status = status;
+    }
+
+    // Nota: Asumimos que existe el modelo Transaction basado en schema.prisma
+    // Si no existe, esto fallará y requerirá ajuste en schema.prisma, pero el usuario indicó que ya estaba en la BD propuesta
+    const [transactions, total] = await Promise.all([
+      prisma.transaction.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limitNum,
+      }),
+      prisma.transaction.count({ where }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      transactions,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum),
+    });
+  } catch (error) {
+    console.error('Error al obtener historial de transacciones:', error);
+    res.status(500).json({ error: 'Error al obtener historial de transacciones' });
+  }
+});
+
+// GET /api/payment/balance - Obtener balance de monedas
+router.get('/balance', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'No autenticado' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: { coins: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    // Obtener última compra
+    const lastPurchase = await prisma.transaction.findFirst({
+      where: {
+        userId: req.user.userId,
+        status: 'completed'
+      },
+      orderBy: { completedAt: 'desc' },
+    });
+
+    return res.status(200).json({
+      success: true,
+      coins: user.coins || 0,
+      lastPurchase: lastPurchase ? {
+        date: lastPurchase.completedAt,
+        amount: lastPurchase.amount,
+        coins: lastPurchase.coins,
+      } : null,
+    });
+  } catch (error) {
+    console.error('Error al obtener balance:', error);
+    res.status(500).json({ error: 'Error al obtener balance' });
+  }
+});
+
 export default router;

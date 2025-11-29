@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { updateUserLoyaltyLevel } from '../utils/level.utils';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -107,10 +108,26 @@ router.post('/earn', async (req: Request, res: Response) => {
       },
     });
 
+    // Obtener niveles del streamer y actualizar nivel del usuario
+    const loyaltyLevels = await prisma.loyaltyLevel.findMany({
+      where: { streamerId },
+      orderBy: { puntosRequeridos: 'asc' },
+    });
+
+    const { levelChanged, newLevel } = await updateUserLoyaltyLevel(
+      prisma,
+      req.user.userId,
+      streamerId,
+      userPoints.points,
+      loyaltyLevels
+    );
+
     return res.status(200).json({
       success: true,
       pointsEarned: amount,
       newTotal: userPoints.points,
+      levelChanged,
+      currentLevel: newLevel,
     });
   } catch (error) {
     console.error('Error al ganar puntos:', error);
@@ -161,6 +178,73 @@ router.get('/history', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error al obtener historial:', error);
     res.status(500).json({ error: 'Error al obtener historial' });
+  }
+});
+
+// POST /api/points/send - Enviar puntos a un streamer
+router.post('/send', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'No autenticado' });
+    }
+
+    const { streamerId, points } = req.body;
+
+    if (!streamerId || !points || points <= 0) {
+      return res.status(400).json({ error: 'streamerId y points (positivo) son requeridos' });
+    }
+
+    // Verificar saldo del usuario (esto requeriría una lógica de "saldo de puntos" global o por streamer)
+    // Según el esquema actual, los puntos son "por streamer" (UserPoints).
+    // Asumiremos que el usuario quiere "donar" puntos que ya tiene acumulados con ESE streamer.
+
+    const userPoints = await prisma.userPoints.findUnique({
+      where: {
+        userId_streamerId: {
+          userId: req.user.userId,
+          streamerId,
+        },
+      },
+    });
+
+    if (!userPoints || userPoints.points < points) {
+      return res.status(400).json({ error: 'No tienes suficientes puntos con este streamer' });
+    }
+
+    // Descontar puntos al usuario
+    await prisma.userPoints.update({
+      where: {
+        userId_streamerId: {
+          userId: req.user.userId,
+          streamerId,
+        },
+      },
+      data: {
+        points: { decrement: points },
+      },
+    });
+
+    // Registrar historial (gasto)
+    await prisma.pointsHistory.create({
+      data: {
+        userId: req.user.userId,
+        streamerId,
+        action: 'points_sent',
+        points: -points,
+      },
+    });
+
+    // Aquí podríamos sumar puntos al streamer si tuviera un "saldo global", pero el esquema no lo deja claro.
+    // Por ahora solo descontamos al usuario como una forma de "gastar" puntos en canjes/interacciones.
+
+    return res.status(200).json({
+      success: true,
+      newBalance: userPoints.points - points,
+      streamerReceived: points,
+    });
+  } catch (error) {
+    console.error('Error al enviar puntos:', error);
+    res.status(500).json({ error: 'Error al enviar puntos' });
   }
 });
 

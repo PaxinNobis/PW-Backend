@@ -68,6 +68,10 @@ model User {
   // --- Relaciones de Viewers ---
   activeViewing    ActiveViewer[]
 
+  // --- Relaciones de Niveles de Lealtad (Progreso del Usuario) ---
+  userLoyaltyProgress       UserLoyaltyLevel[] @relation("UserLoyaltyLevels")
+  streamerLoyaltyProgress   UserLoyaltyLevel[] @relation("StreamerLoyaltyLevels")
+
   // --- Redes Sociales ---
   socialLinks      UserSocialLinks?
 
@@ -173,8 +177,27 @@ model LoyaltyLevel {
 
   streamer   User   @relation(fields: [streamerId], references: [id])
   streamerId String
+  
+  userLevels UserLoyaltyLevel[]
 
   @@map("loyalty_levels")
+}
+
+// Persistencia de niveles de lealtad por usuario
+model UserLoyaltyLevel {
+  userId         String
+  streamerId     String
+  loyaltyLevelId String
+  updatedAt      DateTime @default(now())
+
+  user         User         @relation("UserLoyaltyLevels", fields: [userId], references: [id], onDelete: Cascade)
+  streamer     User         @relation("StreamerLoyaltyLevels", fields: [streamerId], references: [id], onDelete: Cascade)
+  loyaltyLevel LoyaltyLevel @relation(fields: [loyaltyLevelId], references: [id], onDelete: Cascade)
+
+  @@id([userId, streamerId])
+  @@index([userId])
+  @@index([streamerId])
+  @@map("user_loyalty_levels")
 }
 
 // --- Modelos para Pagos ---
