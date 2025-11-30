@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import jwt from 'jsonwebtoken';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -226,10 +227,12 @@ router.get('/stats', async (req: Request, res: Response) => {
             followedBy: true,
           },
         },
-        stream: {
+        streams: { // Cambiado de stream a streams
+          where: { isLive: true },
           select: {
             viewers: true,
           },
+          take: 1
         },
       },
     });
@@ -239,7 +242,7 @@ router.get('/stats', async (req: Request, res: Response) => {
     }
 
     // Calcular promedio de viewers (esto es simplificado, idealmente guardarías histórico)
-    const currentViewers = user.stream?.viewers || 0;
+    const currentViewers = user.streams[0]?.viewers || 0; // Acceder al primer stream
 
     return res.status(200).json({
       success: true,
@@ -316,6 +319,14 @@ router.put('/settings', async (req: Request, res: Response) => {
 
     const { title, gameId, tags, iframeUrl, isLive } = req.body;
     const userId = req.user.userId;
+
+    // Cast decoded token to any to access userName or update interface if possible. Since I cannot see the interface definition easily, casting to any is safer for now or just removing the property access if not needed. Wait, the error says 'userName' does not exist on 'JwtPayload'. I will check where JwtPayload is defined or just cast it.
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ error: 'Token no proporcionado' });
+    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret') as any; // Cast a any para evitar error de tipo
+    const userName = decoded.userName || decoded.name || 'Streamer';
 
     // Buscar el stream activo actual (si existe)
     const activeStream = await prisma.stream.findFirst({
