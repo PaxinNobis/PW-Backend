@@ -365,13 +365,22 @@ router.put('/settings', async (req: Request, res: Response) => {
       if (!finalGameId && activeStream) {
         finalGameId = activeStream.gameId;
       }
-      if (!finalGameId) {
+
+      // Validar que el juego exista
+      if (finalGameId) {
+        const gameExists = await prisma.game.findUnique({ where: { id: finalGameId } });
+        if (!gameExists) {
+          // Si el ID proporcionado no existe, buscar uno por defecto
+          const defaultGame = await prisma.game.findFirst();
+          finalGameId = defaultGame?.id;
+        }
+      } else {
         const defaultGame = await prisma.game.findFirst();
         finalGameId = defaultGame?.id;
       }
 
       if (!finalGameId) {
-        return res.status(400).json({ error: 'No hay juegos disponibles en la base de datos' });
+        return res.status(400).json({ error: 'No hay juegos disponibles en la base de datos. Contacta al administrador.' });
       }
 
       // Obtener nombre de usuario de forma segura
