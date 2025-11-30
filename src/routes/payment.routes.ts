@@ -101,7 +101,7 @@ router.post('/create-checkout-session', authMiddleware, async (req: Request, res
         },
       ],
       mode: 'payment',
-      return_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/return?session_id={CHECKOUT_SESSION_ID}`,
+      return_url: `${process.env.FRONTEND_URL || 'https://paxinnobis.github.io/PW-Frontend'}/payment/return?session_id={CHECKOUT_SESSION_ID}`,
       metadata: {
         userId: req.user.userId,
         coinPackId: coinPackId || 'custom',
