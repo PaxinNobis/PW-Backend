@@ -1,7 +1,5 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import * as fs from 'fs';
-import * as path from 'path';
 
 const prisma = new PrismaClient();
 
@@ -630,16 +628,10 @@ const streamsData = [
 
 async function main() {
   console.log('Iniciando seed de la base de datos...');
-  console.log('Directorio actual:', __dirname);
-  console.log('Buscando archivos JSON en:', path.join(__dirname, '..', 'public', 'data'));
 
-  try {
-    console.log('Games Data:', gamesData.length);
-    console.log('Tags Data:', tagsData.length);
-    console.log('Streams Data:', streamsData.length);
-  } catch (e) {
-    console.error('Error leyendo JSONs:', e);
-  }
+  console.log('Games Data:', gamesData.length);
+  console.log('Tags Data:', tagsData.length);
+  console.log('Streams Data:', streamsData.length);
 
   // Crear tags
   await prisma.tag.createMany({
@@ -700,7 +692,7 @@ async function main() {
       email: `${streamer.nickname.toLowerCase()}@astrotv.com`,
       name: streamer.nickname,
       password: hashedPassword,
-      pfp: streamer.pfp || `https://api.dicebear.com/7.x/avataaars/svg?seed=${streamer.nickname}`, // Avatar del streamer
+      pfp: streamer.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${streamer.nickname}`, // Avatar del streamer
       level: Math.floor(Math.random() * 30) + 20, // Nivel entre 20-50
       points: Math.floor(Math.random() * 10000) + 5000, // Puntos entre 5000-15000
       coins: Math.floor(Math.random() * 500) + 100, // Coins entre 100-600
