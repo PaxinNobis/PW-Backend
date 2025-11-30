@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { updateUserLoyaltyLevel } from '../utils/level.utils';
+import { updateUserLoyaltyLevel, calculateGlobalLevel } from '../utils/level.utils';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -98,8 +98,8 @@ router.post('/earn', async (req: Request, res: Response) => {
       },
     });
 
-    // Actualizar puntos totales del usuario
-    await prisma.user.update({
+    // Actualizar puntos totales del usuario y nivel global
+    const updatedUser = await prisma.user.update({
       where: { id: req.user.userId },
       data: {
         points: {
@@ -107,6 +107,15 @@ router.post('/earn', async (req: Request, res: Response) => {
         },
       },
     });
+
+    // Calcular nuevo nivel global
+    const newGlobalLevel = calculateGlobalLevel(updatedUser.points || 0);
+    if (newGlobalLevel !== updatedUser.level) {
+      await prisma.user.update({
+        where: { id: req.user.userId },
+        data: { level: newGlobalLevel }
+      });
+    }
 
     // Obtener niveles del streamer y actualizar nivel del usuario
     const loyaltyLevels = await prisma.loyaltyLevel.findMany({

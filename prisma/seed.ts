@@ -186,6 +186,26 @@ async function main() {
   }
   console.log(`Regalos creados: ${giftsCreated}`);
 
+  // Crear niveles de lealtad por defecto para cada streamer
+  let levelsCreated = 0;
+  for (const streamer of allStreamers) {
+    // Limpiar niveles existentes
+    await prisma.loyaltyLevel.deleteMany({
+      where: { streamerId: streamer.id }
+    });
+
+    await prisma.loyaltyLevel.createMany({
+      data: [
+        { nombre: 'Novato', puntosRequeridos: 10, recompensa: 'Emblema Novato', streamerId: streamer.id },
+        { nombre: 'Fan', puntosRequeridos: 20, recompensa: 'Emblema Fan', streamerId: streamer.id },
+        { nombre: 'Super Fan', puntosRequeridos: 30, recompensa: 'Emblema Super Fan', streamerId: streamer.id },
+        { nombre: 'Leyenda', puntosRequeridos: 40, recompensa: 'Emblema Leyenda', streamerId: streamer.id },
+      ],
+    });
+    levelsCreated += 4;
+  }
+  console.log(`Niveles de lealtad creados: ${levelsCreated}`);
+
   console.log('Seed completado exitosamente!');
 }
 

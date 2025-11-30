@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { getUserPersistedLevel } from '../utils/level-lookup.utils';
+import { updateUserLoyaltyLevel, calculateGlobalLevel } from '../utils/level.utils';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -28,28 +29,83 @@ router.post('/send', async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Stream no encontrado' });
         }
 
-        // Guardar mensaje
-        const message = await prisma.chatMessage.create({
-            data: {
-                text: texto,
-                streamId,
-                authorId: req.user.userId,
-                streamOwnerId: stream.streamerId,
-            },
-            include: {
-                author: {
-                    select: {
-                        id: true,
-                        name: true,
-                        pfp: true,
-                        level: true,
+        const userId = req.user.userId;
+
+        // Ejecutar transacción para guardar mensaje y actualizar puntos
+        const result = await prisma.$transaction(async (tx) => {
+            // 1. Guardar mensaje
+            const message = await tx.chatMessage.create({
+                data: {
+                    text: texto,
+                    streamId,
+                    authorId: userId,
+                    streamOwnerId: stream.streamerId,
+                },
+                include: {
+                    author: {
+                        select: {
+                            id: true,
+                            name: true,
+                            pfp: true,
+                            level: true,
+                        },
                     },
                 },
-            },
+            });
+
+            // 2. Actualizar puntos del usuario (1 punto por mensaje)
+            // a. Puntos globales y monedas (opcional, aquí solo puntos)
+            const updatedUser = await tx.user.update({
+                where: { id: userId },
+                data: {
+                    points: { increment: 1 },
+                },
+            });
+
+            // b. Nivel global
+            const newGlobalLevel = calculateGlobalLevel(updatedUser.points || 0);
+            if (newGlobalLevel !== updatedUser.level) {
+                await tx.user.update({
+                    where: { id: userId },
+                    data: { level: newGlobalLevel }
+                });
+            }
+
+            // c. Puntos por streamer (UserPoints)
+            const userPoints = await tx.userPoints.upsert({
+                where: {
+                    userId_streamerId: {
+                        userId: userId,
+                        streamerId: stream.streamerId,
+                    },
+                },
+                create: {
+                    userId: userId,
+                    streamerId: stream.streamerId,
+                    points: 1,
+                },
+                update: {
+                    points: { increment: 1 },
+                    lastUpdated: new Date(),
+                },
+            });
+
+            return { message, userPoints };
         });
 
-        // Obtener nivel persistido del usuario
-        const levelData = await getUserPersistedLevel(prisma, req.user.userId, stream.streamerId);
+        // 3. Actualizar nivel de lealtad (fuera de transacción para evitar bloqueos largos)
+        const loyaltyLevels = await prisma.loyaltyLevel.findMany({
+            where: { streamerId: stream.streamerId },
+            orderBy: { puntosRequeridos: 'asc' },
+        });
+
+        const { newLevel } = await updateUserLoyaltyLevel(
+            prisma,
+            userId,
+            stream.streamerId,
+            result.userPoints.points,
+            loyaltyLevels
+        );
 
         // TODO: Aquí idealmente se emitiría el evento WebSocket si estuviera integrado
         // Por ahora confiamos en que el cliente WS también recibe el mensaje o el frontend lo maneja
@@ -57,19 +113,21 @@ router.post('/send', async (req: Request, res: Response) => {
         return res.status(201).json({
             success: true,
             message: {
-                id: message.id,
-                streamId: message.streamId,
-                userId: message.authorId,
-                texto: message.text,
-                hora: message.createdAt.toISOString(),
+                id: result.message.id,
+                streamId: result.message.streamId,
+                userId: result.message.authorId,
+                texto: result.message.text,
+                hora: result.message.createdAt.toISOString(),
                 user: {
-                    ...message.author,
-                    level: levelData.level,
-                    levelName: levelData.name,
+                    id: result.message.author.id,
+                    name: result.message.author.name,
+                    pfp: result.message.author.pfp,
+                    level: newLevel.level,
+                    levelName: newLevel.name,
                 },
-                createdAt: message.createdAt,
+                createdAt: result.message.createdAt,
             },
-            pointsEarned: 0, // Placeholder para futura implementación de puntos por mensaje
+            pointsEarned: 1,
         });
     } catch (error) {
         console.error('Error al enviar mensaje:', error);
@@ -86,6 +144,8 @@ router.get('/messages/:streamId', async (req: Request, res: Response) => {
         const limitNum = parseInt(limit as string);
         const offsetNum = parseInt(offset as string);
 
+        console.log('🔍 History Endpoint Query:', { streamId, limitNum, offsetNum });
+
         const [messages, total] = await Promise.all([
             prisma.chatMessage.findMany({
                 where: { streamId },
@@ -95,7 +155,7 @@ router.get('/messages/:streamId', async (req: Request, res: Response) => {
                             id: true,
                             name: true,
                             pfp: true,
-                            level: true,
+                            // level: true, // NO incluir nivel global
                         },
                     },
                 },
@@ -144,18 +204,35 @@ router.get('/messages/:streamId', async (req: Request, res: Response) => {
             });
         });
 
+        // Obtener el primer nivel configurado para fallback
+        const firstLevel = allLevels[0];
+        const defaultLevelName = firstLevel?.nombre || 'Espectador';
+
         // Enriquecer mensajes con nivel persistido
         const enrichedMessages = messages.map(msg => {
-            const levelData = levelMap.get(msg.authorId) || { level: 0, name: 'Espectador' };
+            const levelData = levelMap.get(msg.authorId) || { level: 0, name: defaultLevelName };
+            const authorData = {
+                ...msg.author,
+                level: levelData.level,
+                levelName: levelData.name,
+            };
+
             return {
                 ...msg,
-                author: {
-                    ...msg.author,
-                    level: levelData.level,
-                    levelName: levelData.name,
-                },
+                author: authorData,
+                user: authorData, // Enviar también como user para compatibilidad
             };
         });
+
+        // Debug logging
+        if (enrichedMessages.length > 0) {
+            console.log('🔍 History Endpoint Debug:', {
+                firstMsgUser: enrichedMessages[0].user,
+                firstMsgAuthor: enrichedMessages[0].author,
+                levelMapSize: levelMap.size,
+                defaultLevelName
+            });
+        }
 
         return res.status(200).json({
             success: true,

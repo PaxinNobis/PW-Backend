@@ -34,6 +34,15 @@ router.post('/register', async (req: Request, res: Response) => {
       level: 1,
       points: 0,
       coins: 0,
+      // Crear niveles de lealtad por defecto para este usuario (como streamer)
+      loyaltyLevels: {
+        create: [
+          { nombre: 'Novato', puntosRequeridos: 10, recompensa: 'Emblema Novato' },
+          { nombre: 'Fan', puntosRequeridos: 20, recompensa: 'Emblema Fan' },
+          { nombre: 'Super Fan', puntosRequeridos: 30, recompensa: 'Emblema Super Fan' },
+          { nombre: 'Leyenda', puntosRequeridos: 40, recompensa: 'Emblema Leyenda' },
+        ]
+      }
     },
   });
 

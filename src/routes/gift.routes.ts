@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth.middleware';
-import { updateUserLoyaltyLevel } from '../utils/level.utils';
+import { updateUserLoyaltyLevel, calculateGlobalLevel } from '../utils/level.utils';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -58,7 +58,7 @@ router.post('/send', authMiddleware, async (req: Request, res: Response) => {
 
         // 4. Ejecutar transacción (usando transacción de Prisma para atomicidad)
         const result = await prisma.$transaction(async (tx) => {
-            // a. Descontar monedas al usuario
+            // a. Descontar monedas al usuario y sumar puntos globales
             const updatedUser = await tx.user.update({
                 where: { id: user.id },
                 data: {
@@ -66,6 +66,15 @@ router.post('/send', authMiddleware, async (req: Request, res: Response) => {
                     points: { increment: gift.puntos }, // Puntos globales
                 },
             });
+
+            // Calcular y actualizar nivel global si cambia
+            const newGlobalLevel = calculateGlobalLevel(updatedUser.points || 0);
+            if (newGlobalLevel !== updatedUser.level) {
+                await tx.user.update({
+                    where: { id: user.id },
+                    data: { level: newGlobalLevel }
+                });
+            }
 
             // b. Actualizar o crear puntos del usuario para este streamer (UserPoints)
             const userPoints = await tx.userPoints.upsert({

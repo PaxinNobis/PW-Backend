@@ -19,8 +19,14 @@ export async function getUserPersistedLevel(
     });
 
     if (!userLevel) {
-        // Return default level (Espectador)
-        return { level: 0, name: 'Espectador' };
+        // Get the first configured level for this streamer
+        const firstLevel = await prisma.loyaltyLevel.findFirst({
+            where: { streamerId },
+            orderBy: { puntosRequeridos: 'asc' },
+        });
+
+        // Return first level name or fallback
+        return { level: 0, name: firstLevel?.nombre || 'Sin configurar' };
     }
 
     // Find the level index

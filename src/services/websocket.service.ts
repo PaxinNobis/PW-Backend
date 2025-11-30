@@ -2,6 +2,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { PrismaClient } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 import { getUserPersistedLevel } from '../utils/level-lookup.utils';
+import { updateUserLoyaltyLevel, calculateGlobalLevel } from '../utils/level.utils';
 
 const prisma = new PrismaClient();
 
@@ -197,7 +198,8 @@ async function handleJoin(ws: WebSocketClient, message: any) {
             select: {
               id: true,
               name: true,
-              level: true,
+              pfp: true,
+              // level: true, // NO incluir nivel global
             },
           },
         },
@@ -205,9 +207,53 @@ async function handleJoin(ws: WebSocketClient, message: any) {
         take: 50,
       });
 
+      // Obtener niveles de lealtad para enriquecer el historial
+      const authorIds = [...new Set(recentMessages.map(m => m.authorId))];
+      const userLevels = await prisma.userLoyaltyLevel.findMany({
+        where: {
+          streamerId: stream.streamerId,
+          userId: { in: authorIds },
+        },
+        include: {
+          loyaltyLevel: true,
+        },
+      });
+
+      const allLevels = await prisma.loyaltyLevel.findMany({
+        where: { streamerId: stream.streamerId },
+        orderBy: { puntosRequeridos: 'asc' },
+      });
+
+      // Primer nivel para fallback
+      const firstLevel = allLevels[0];
+      const defaultLevelName = firstLevel?.nombre || 'Espectador';
+
+      const levelMap = new Map<string, { level: number; name: string }>();
+      userLevels.forEach(ul => {
+        const levelIndex = allLevels.findIndex(l => l.id === ul.loyaltyLevelId);
+        levelMap.set(ul.userId, {
+          level: levelIndex + 1,
+          name: ul.loyaltyLevel.nombre,
+        });
+      });
+
+      const enrichedMessages = recentMessages.map(msg => {
+        const levelData = levelMap.get(msg.authorId) || { level: 0, name: defaultLevelName };
+        const authorData = {
+          ...msg.author,
+          level: levelData.level,
+          levelName: levelData.name,
+        };
+        return {
+          ...msg,
+          author: authorData,
+          user: authorData, // Compatibilidad
+        };
+      });
+
       ws.send(JSON.stringify({
         type: 'history',
-        messages: recentMessages.reverse(),
+        messages: enrichedMessages.reverse(),
       }));
 
       ws.hasReceivedHistory = true;
@@ -246,41 +292,115 @@ async function handleChatMessage(ws: WebSocketClient, message: any) {
       return;
     }
 
-    // Obtener nivel persistido del usuario
-    const levelData = await getUserPersistedLevel(prisma, ws.userId, stream.streamerId);
-
-    // Guardar mensaje en la base de datos
-    const chatMessage = await prisma.chatMessage.create({
-      data: {
-        text: text.trim(),
-        streamId: ws.streamId,
-        authorId: ws.userId,
-        streamOwnerId: stream.streamerId,
-      },
-      include: {
-        author: {
-          select: {
-            id: true,
-            name: true,
-            level: true, // Mantenemos level global por si acaso, pero usaremos el calculado
+    // Ejecutar transacción para guardar mensaje y actualizar puntos
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Guardar mensaje
+      const chatMessage = await tx.chatMessage.create({
+        data: {
+          text: text.trim(),
+          streamId: ws.streamId!,
+          authorId: ws.userId!,
+          streamOwnerId: stream.streamerId,
+        },
+        include: {
+          author: {
+            select: {
+              id: true,
+              name: true,
+              level: true,
+              pfp: true,
+            },
           },
         },
-      },
+      });
+
+      // 2. Actualizar puntos del usuario (1 punto por mensaje)
+      // a. Puntos globales
+      const updatedUser = await tx.user.update({
+        where: { id: ws.userId! },
+        data: {
+          points: { increment: 1 },
+        },
+      });
+
+      // b. Nivel global
+      const newGlobalLevel = calculateGlobalLevel(updatedUser.points || 0);
+      if (newGlobalLevel !== updatedUser.level) {
+        await tx.user.update({
+          where: { id: ws.userId! },
+          data: { level: newGlobalLevel }
+        });
+      }
+
+      // c. Puntos por streamer (UserPoints)
+      const userPoints = await tx.userPoints.upsert({
+        where: {
+          userId_streamerId: {
+            userId: ws.userId!,
+            streamerId: stream.streamerId,
+          },
+        },
+        create: {
+          userId: ws.userId!,
+          streamerId: stream.streamerId,
+          points: 1,
+        },
+        update: {
+          points: { increment: 1 },
+          lastUpdated: new Date(),
+        },
+      });
+
+      return { chatMessage, userPoints };
+    });
+
+    // 3. Actualizar nivel de lealtad
+    const loyaltyLevels = await prisma.loyaltyLevel.findMany({
+      where: { streamerId: stream.streamerId },
+      orderBy: { puntosRequeridos: 'asc' },
+    });
+
+    const { newLevel } = await updateUserLoyaltyLevel(
+      prisma,
+      ws.userId!,
+      stream.streamerId,
+      result.userPoints.points,
+      loyaltyLevels
+    );
+
+    // Debug logging
+    console.log('🔍 WebSocket Level Debug:', {
+      userId: ws.userId,
+      streamerId: stream.streamerId,
+      points: result.userPoints.points,
+      loyaltyLevelsCount: loyaltyLevels.length,
+      newLevel: newLevel,
+      levelName: newLevel.name
     });
 
     // Broadcast del mensaje a todos los usuarios en la sala
     broadcastToRoom(ws.streamId, {
       type: 'message',
       message: {
-        id: chatMessage.id,
-        text: chatMessage.text,
-        createdAt: chatMessage.createdAt,
+        id: result.chatMessage.id,
+        text: result.chatMessage.text,
+        createdAt: result.chatMessage.createdAt,
         author: {
-          ...chatMessage.author,
-          level: levelData.level,
-          levelName: levelData.name,
+          id: result.chatMessage.author.id,
+          name: result.chatMessage.author.name,
+          pfp: result.chatMessage.author.pfp,
+          level: newLevel.level,
+          levelName: newLevel.name,
+        },
+        user: {
+          id: result.chatMessage.author.id,
+          name: result.chatMessage.author.name,
+          pfp: result.chatMessage.author.pfp,
+          level: newLevel.level,
+          levelName: newLevel.name,
         },
       },
+      pointsEarned: 1,
     });
 
     console.log(`Mensaje de ${ws.userName} en stream ${ws.streamId}: ${text}`);
