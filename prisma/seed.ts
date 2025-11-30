@@ -629,6 +629,17 @@ const streamsData = [
 async function main() {
   console.log('Iniciando seed de la base de datos...');
 
+  // Limpiar base de datos completa para evitar duplicados y estados corruptos
+  console.log('Limpiando base de datos...');
+  await prisma.stream.deleteMany({});
+  await prisma.gift.deleteMany({});
+  await prisma.loyaltyLevel.deleteMany({});
+  await prisma.coinPack.deleteMany({});
+  await prisma.user.deleteMany({});
+  await prisma.game.deleteMany({});
+  await prisma.tag.deleteMany({});
+  console.log('Base de datos limpia.');
+
   console.log('Games Data:', gamesData.length);
   console.log('Tags Data:', tagsData.length);
   console.log('Streams Data:', streamsData.length);
