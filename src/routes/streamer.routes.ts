@@ -115,27 +115,7 @@ router.get('/level', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/streamer/levels/all - Obtener todos los niveles disponibles
-router.get('/levels/all', async (req: Request, res: Response) => {
-  try {
-    return res.status(200).json({
-      success: true,
-      levels: LEVELS.map(l => ({
-        id: l.id,
-        name: l.name,
-        minFollowers: l.minFollowers,
-        maxFollowers: l.maxFollowers,
-        minHours: l.minHours,
-        maxHours: l.maxHours,
-        rewards: l.rewards,
-        levelOrder: l.levelOrder,
-      }))
-    });
-  } catch (error) {
-    console.error('Error al obtener niveles:', error);
-    res.status(500).json({ error: 'Error al obtener niveles' });
-  }
-});
+
 
 // PUT /api/streamer/hours - Actualizar horas transmitidas
 router.put('/hours', async (req: Request, res: Response) => {

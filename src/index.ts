@@ -16,11 +16,7 @@ import panelRoutes from './routes/panel.routes';
 import paymentRoutes from './routes/payment.routes';
 import viewerRoutes from './routes/viewer.routes';
 import pointsRoutes from './routes/points.routes';
-import medalRoutes from './routes/medal.routes';
 import profileRoutes from './routes/profile.routes';
-import notificationRoutes from './routes/notification.routes';
-import clipRoutes from './routes/clip.routes';
-import friendRoutes from './routes/friend.routes';
 import streamerRoutes from './routes/streamer.routes';
 import chatRoutes from './routes/chat.routes';
 import giftRoutes from './routes/gift.routes';
@@ -65,11 +61,7 @@ app.use('/api/panel', authMiddleware, panelRoutes); // Protegida
 app.use('/api/payment', paymentRoutes); // Parcialmente protegida (coin-packs público)
 app.use('/api/viewer', authMiddleware, viewerRoutes); // Protegida
 app.use('/api/points', authMiddleware, pointsRoutes); // Protegida
-app.use('/api/medal', authMiddleware, medalRoutes); // Protegida
 app.use('/api/profile', profileRoutes); // Parcialmente protegida
-app.use('/api/notification', authMiddleware, notificationRoutes); // Protegida
-app.use('/api/clip', clipRoutes); // Parcialmente protegida
-app.use('/api/friend', authMiddleware, friendRoutes); // Protegida
 app.use('/api/streamer', authMiddleware, streamerRoutes); // Protegida
 app.use('/api/chat', authMiddleware, chatRoutes); // Protegida
 app.use('/api/gifts', authMiddleware, giftRoutes); // Protegida
