@@ -12,6 +12,16 @@ const streamsData = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'publi
 
 async function main() {
   console.log('Iniciando seed de la base de datos...');
+  console.log('Directorio actual:', __dirname);
+  console.log('Buscando archivos JSON en:', path.join(__dirname, '..', 'public', 'data'));
+
+  try {
+    console.log('Games Data:', gamesData.length);
+    console.log('Tags Data:', tagsData.length);
+    console.log('Streams Data:', streamsData.length);
+  } catch (e) {
+    console.error('Error leyendo JSONs:', e);
+  }
 
   // Crear tags
   await prisma.tag.createMany({
