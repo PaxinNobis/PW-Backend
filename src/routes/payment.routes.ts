@@ -8,7 +8,7 @@ const prisma = new PrismaClient();
 
 // Inicializar Stripe (requiere la clave secreta)
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2024-11-20.acacia',
+  apiVersion: '2024-11-20.acacia', // Usando versión compatible con la librería instalada
 });
 
 // GET /api/payment/coin-packs - Obtener paquetes de monedas disponibles
@@ -32,55 +32,188 @@ router.post('/create-checkout-session', authMiddleware, async (req: Request, res
       return res.status(401).json({ error: 'No autenticado' });
     }
 
-    const { coinPackId } = req.body;
+    const { coinPackId, amount } = req.body;
 
-    if (!coinPackId) {
-      return res.status(400).json({ error: 'coinPackId es requerido' });
+    if (!coinPackId && !amount) {
+      return res.status(400).json({ error: 'Se requiere coinPackId o amount' });
     }
 
-    // Buscar el paquete de monedas
-    const coinPack = await prisma.coinPack.findUnique({
-      where: { id: coinPackId },
-    });
+    let priceInSoles = 0;
+    let coinsToGive = 0;
+    let productName = '';
+    let productDesc = '';
 
-    if (!coinPack) {
-      return res.status(404).json({ error: 'Paquete de monedas no encontrado' });
+    if (coinPackId) {
+      // Lógica existente para paquetes
+      const coinPack = await prisma.coinPack.findUnique({
+        where: { id: coinPackId },
+      });
+
+      if (!coinPack) {
+        return res.status(404).json({ error: 'Paquete de monedas no encontrado' });
+      }
+
+      priceInSoles = coinPack.en_soles;
+      coinsToGive = coinPack.valor;
+      productName = coinPack.nombre;
+      productDesc = `${coinPack.valor} Astrocoins`;
+    } else {
+      // Lógica para cantidad personalizada
+      // Tasa base: 0.05 PEN por moneda
+      const BASE_RATE = 0.05;
+      coinsToGive = Number(amount);
+
+      if (isNaN(coinsToGive) || coinsToGive <= 0) {
+        return res.status(400).json({ error: 'Cantidad de monedas inválida' });
+      }
+
+      priceInSoles = coinsToGive * BASE_RATE;
+
+      // Validar mínimo de Stripe (~$0.50 USD => ~2.00 PEN)
+      if (priceInSoles < 2.00) {
+        return res.status(400).json({ error: 'El monto mínimo es de 40 monedas (2.00 PEN)' });
+      }
+
+      productName = `${coinsToGive} Astrocoins`;
+      productDesc = `Compra personalizada de ${coinsToGive} monedas`;
     }
 
-    // Crear sesión de checkout en Stripe
+    // Crear sesión de checkout en Stripe (Embedded Checkout)
     const session = await stripe.checkout.sessions.create({
+      ui_mode: 'embedded',
       payment_method_types: ['card'],
       line_items: [
         {
           price_data: {
             currency: 'pen',
             product_data: {
-              name: coinPack.nombre,
-              description: `${coinPack.valor} DogeCoins`,
+              name: productName,
+              description: productDesc,
+              images: ['https://via.placeholder.com/300x300?text=AstroCoin'],
             },
-            unit_amount: Math.round(coinPack.en_soles * 100), // Stripe usa centavos
+            unit_amount: Math.round(priceInSoles * 100), // Stripe usa centavos
           },
           quantity: 1,
         },
       ],
       mode: 'payment',
-      success_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/cancel`,
+      return_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/return?session_id={CHECKOUT_SESSION_ID}`,
       metadata: {
         userId: req.user.userId,
-        coinPackId: coinPack.id,
-        coinValue: coinPack.valor.toString(),
+        coinPackId: coinPackId || 'custom',
+        coinValue: coinsToGive.toString(),
+      },
+    });
+
+    // Crear registro de transacción pendiente
+    await prisma.transaction.create({
+      data: {
+        userId: req.user.userId,
+        sessionId: session.id,
+        amount: priceInSoles,
+        coins: coinsToGive,
+        status: 'pending',
+        paymentMethod: 'stripe',
       },
     });
 
     return res.status(200).json({
       success: true,
-      sessionId: session.id,
-      url: session.url,
+      clientSecret: session.client_secret,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error al crear sesión de pago:', error);
-    res.status(500).json({ error: 'Error al crear sesión de pago' });
+    console.error('Detalles del error:', JSON.stringify(error, null, 2));
+    res.status(500).json({ error: 'Error al crear sesión de pago', details: error.message });
+  }
+});
+
+// POST /api/payment/verify-session - Verificar estado de sesión (para localhost/fallback)
+router.post('/verify-session', authMiddleware, async (req: Request, res: Response) => {
+  console.log('🔍 Verificando sesión:', req.body);
+  try {
+    const { sessionId } = req.body;
+
+    if (!sessionId) {
+      console.error(' sessionId faltante');
+      return res.status(400).json({ error: 'sessionId es requerido' });
+    }
+
+    // 1. Verificar si ya fue procesada
+    const existingTransaction = await prisma.transaction.findFirst({
+      where: { sessionId, status: 'completed' },
+    });
+
+    if (existingTransaction) {
+      console.log('Pago ya procesado anteriormente');
+      return res.status(200).json({ success: true, message: 'Pago ya procesado anteriormente' });
+    }
+
+    // 2. Consultar a Stripe
+    console.log('Consultando Stripe para sesión:', sessionId);
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    console.log('Estado del pago en Stripe:', session.payment_status);
+
+    if (session.payment_status === 'paid') {
+      const userId = session.metadata?.userId;
+      const coinValue = Number(session.metadata?.coinValue);
+
+      if (userId && coinValue) {
+        // 3. Actualizar transacción y usuario en una transacción de BD
+        await prisma.$transaction(async (tx) => {
+          // Intentar marcar como completada SOLO si estaba pendiente
+          const updateResult = await tx.transaction.updateMany({
+            where: { sessionId, status: 'pending' },
+            data: { status: 'completed', completedAt: new Date() },
+          });
+
+          if (updateResult.count > 0) {
+            // Caso 1: Transacción existía y estaba pendiente -> Éxito, sumar monedas
+            await tx.user.update({
+              where: { id: userId },
+              data: { coins: { increment: coinValue } },
+            });
+            return;
+          }
+
+          // Caso 2: No se actualizó ninguna fila.
+          // Puede ser porque ya estaba completada O porque no existía.
+          const existingTx = await tx.transaction.findFirst({ where: { sessionId } });
+
+          if (existingTx) {
+            // Si existe, significa que ya estaba completada (o fallida). No sumar monedas.
+            return;
+          }
+
+          // Caso 3: No existía la transacción (raro, pero posible si falló create-checkout-session)
+          // Crear la transacción directamente como completada y sumar monedas
+          await tx.transaction.create({
+            data: {
+              userId,
+              sessionId,
+              amount: session.amount_total ? session.amount_total / 100 : 0,
+              coins: coinValue,
+              status: 'completed',
+              paymentMethod: 'stripe',
+              completedAt: new Date(),
+            }
+          });
+
+          await tx.user.update({
+            where: { id: userId },
+            data: { coins: { increment: coinValue } },
+          });
+        });
+
+        return res.status(200).json({ success: true, message: 'Pago verificado y monedas agregadas' });
+      }
+    }
+
+    return res.status(400).json({ success: false, status: session.payment_status });
+
+  } catch (error: any) {
+    console.error('Error al verificar sesión:', error);
+    res.status(500).json({ error: 'Error al verificar sesión', details: error.message });
   }
 });
 
@@ -108,27 +241,66 @@ router.post('/webhook', async (req: Request, res: Response) => {
   // Manejar el evento de pago exitoso
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
+    const sessionId = session.id;
+
+    // Verificar si ya fue procesada (Idempotencia rápida)
+    const existingTransaction = await prisma.transaction.findFirst({
+      where: { sessionId, status: 'completed' },
+    });
+
+    if (existingTransaction) {
+      console.log(`Sesión ${sessionId} ya procesada. Ignorando webhook.`);
+      return res.status(200).json({ received: true });
+    }
 
     const userId = session.metadata?.userId;
-    const coinValue = session.metadata?.coinValue;
+    const coinValue = Number(session.metadata?.coinValue);
 
     if (userId && coinValue) {
       try {
-        // Actualizar las monedas del usuario
-        const user = await prisma.user.findUnique({
-          where: { id: userId },
-        });
-
-        if (user) {
-          await prisma.user.update({
-            where: { id: userId },
-            data: {
-              coins: (user.coins || 0) + Number(coinValue),
-            },
+        await prisma.$transaction(async (tx) => {
+          // Intentar marcar como completada SOLO si estaba pendiente
+          const updateResult = await tx.transaction.updateMany({
+            where: { sessionId, status: 'pending' },
+            data: { status: 'completed', completedAt: new Date() },
           });
 
-          console.log(`Se agregaron ${coinValue} monedas al usuario ${userId}`);
-        }
+          if (updateResult.count > 0) {
+            // Caso 1: Transición exitosa de pending -> completed
+            await tx.user.update({
+              where: { id: userId },
+              data: { coins: { increment: coinValue } },
+            });
+            console.log(`Se agregaron ${coinValue} monedas al usuario ${userId} (Webhook - Update)`);
+            return;
+          }
+
+          // Caso 2: Verificar si ya existe (para evitar duplicados si update falló por status)
+          const existingTx = await tx.transaction.findFirst({ where: { sessionId } });
+          if (existingTx) {
+            // Ya existe (completada o fallida), no hacer nada
+            return;
+          }
+
+          // Caso 3: No existía, crearla
+          await tx.transaction.create({
+            data: {
+              userId,
+              sessionId,
+              amount: session.amount_total ? session.amount_total / 100 : 0,
+              coins: coinValue,
+              status: 'completed',
+              paymentMethod: 'stripe',
+              completedAt: new Date(),
+            }
+          });
+
+          await tx.user.update({
+            where: { id: userId },
+            data: { coins: { increment: coinValue } },
+          });
+          console.log(`Se agregaron ${coinValue} monedas al usuario ${userId} (Webhook - Create)`);
+        });
       } catch (error) {
         console.error('Error al actualizar monedas del usuario:', error);
       }

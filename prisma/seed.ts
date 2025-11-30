@@ -147,10 +147,10 @@ async function main() {
 
   await prisma.coinPack.createMany({
     data: [
-      { nombre: 'Starter Astrocoin Pack', valor: 30, en_soles: 1.5 },
-      { nombre: 'Basic Astrocoin Pack', valor: 100, en_soles: 5.0 },
-      { nombre: 'Premium Astrocoin Pack', valor: 500, en_soles: 20.0 },
-      { nombre: 'Ultimate Astrocoin Pack', valor: 1000, en_soles: 35.0 },
+      { nombre: 'Starter Astrocoin Pack', valor: 30, en_soles: 3.0 },
+      { nombre: 'Basic Astrocoin Pack', valor: 100, en_soles: 6.0 },
+      { nombre: 'Premium Astrocoin Pack', valor: 500, en_soles: 22.0 },
+      { nombre: 'Ultimate Astrocoin Pack', valor: 1000, en_soles: 40.0 },
     ],
     skipDuplicates: true,
   });

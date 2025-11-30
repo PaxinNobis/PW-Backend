@@ -92,12 +92,23 @@ router.get('/streams/details/:nickname', async (req: Request, res: Response) => 
   try {
     const { nickname } = req.params;
 
-    // Buscar el stream por el nombre del streamer
+    // Verificar que el usuario existe
+    const user = await prisma.user.findFirst({
+      where: { name: nickname },
+      select: { id: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    // Buscar el stream activo del usuario
     const stream = await prisma.stream.findFirst({
       where: {
-        streamer: {
-          name: nickname,
-        },
+        streamerId: user.id,
         isLive: true, // Solo el stream activo
       },
       include: {
@@ -124,10 +135,7 @@ router.get('/streams/details/:nickname', async (req: Request, res: Response) => 
       },
     });
 
-    if (!stream) {
-      return res.status(404).json({ error: 'Stream no encontrado' });
-    }
-
+    // Devolver 200 con stream: null si no hay stream activo
     return res.status(200).json({ success: true, stream });
   } catch (error) {
     console.error('Error al obtener detalles del stream:', error);

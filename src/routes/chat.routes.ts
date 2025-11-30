@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { getUserPersistedLevel } from '../utils/level-lookup.utils';
 import { updateUserLoyaltyLevel, calculateGlobalLevel } from '../utils/level.utils';
 
 const router = Router();
@@ -54,7 +53,7 @@ router.post('/send', async (req: Request, res: Response) => {
             });
 
             // 2. Actualizar puntos del usuario (1 punto por mensaje)
-            // a. Puntos globales y monedas (opcional, aquí solo puntos)
+            // a. Puntos globales
             const updatedUser = await tx.user.update({
                 where: { id: userId },
                 data: {
@@ -93,7 +92,7 @@ router.post('/send', async (req: Request, res: Response) => {
             return { message, userPoints };
         });
 
-        // 3. Actualizar nivel de lealtad (fuera de transacción para evitar bloqueos largos)
+        // 3. Actualizar nivel de lealtad (fuera de transacción)
         const loyaltyLevels = await prisma.loyaltyLevel.findMany({
             where: { streamerId: stream.streamerId },
             orderBy: { puntosRequeridos: 'asc' },
@@ -106,9 +105,6 @@ router.post('/send', async (req: Request, res: Response) => {
             result.userPoints.points,
             loyaltyLevels
         );
-
-        // TODO: Aquí idealmente se emitiría el evento WebSocket si estuviera integrado
-        // Por ahora confiamos en que el cliente WS también recibe el mensaje o el frontend lo maneja
 
         return res.status(201).json({
             success: true,
@@ -144,27 +140,21 @@ router.get('/messages/:streamId', async (req: Request, res: Response) => {
         const limitNum = parseInt(limit as string);
         const offsetNum = parseInt(offset as string);
 
-        console.log('🔍 History Endpoint Query:', { streamId, limitNum, offsetNum });
-
-        const [messages, total] = await Promise.all([
-            prisma.chatMessage.findMany({
-                where: { streamId },
-                include: {
-                    author: {
-                        select: {
-                            id: true,
-                            name: true,
-                            pfp: true,
-                            // level: true, // NO incluir nivel global
-                        },
+        const messages = await prisma.chatMessage.findMany({
+            where: { streamId },
+            include: {
+                author: {
+                    select: {
+                        id: true,
+                        name: true,
+                        pfp: true,
                     },
                 },
-                orderBy: { createdAt: 'desc' },
-                take: limitNum,
-                skip: offsetNum,
-            }),
-            prisma.chatMessage.count({ where: { streamId } }),
-        ]);
+            },
+            orderBy: { createdAt: 'desc' },
+            take: limitNum,
+            skip: offsetNum,
+        });
 
         // Obtener el streamerId del stream
         const stream = await prisma.stream.findUnique({
@@ -176,108 +166,71 @@ router.get('/messages/:streamId', async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Stream no encontrado' });
         }
 
-        // Obtener niveles persistidos para cada autor
-        const authorIds = [...new Set(messages.map(m => m.authorId))];
-        const userLevels = await prisma.userLoyaltyLevel.findMany({
-            where: {
-                streamerId: stream.streamerId,
-                userId: { in: authorIds },
-            },
-            include: {
-                loyaltyLevel: true,
-            },
-        });
-
-        // Obtener todos los niveles para calcular el índice
-        const allLevels = await prisma.loyaltyLevel.findMany({
-            where: { streamerId: stream.streamerId },
-            orderBy: { puntosRequeridos: 'asc' },
-        });
-
-        // Mapa de niveles por usuario
-        const levelMap = new Map<string, { level: number; name: string }>();
-        userLevels.forEach(ul => {
-            const levelIndex = allLevels.findIndex(l => l.id === ul.loyaltyLevelId);
-            levelMap.set(ul.userId, {
-                level: levelIndex + 1,
-                name: ul.loyaltyLevel.nombre,
+        // Enriquecer mensajes con levelName
+        const enrichedMessages = await Promise.all(messages.map(async (msg) => {
+            // Obtener nivel de lealtad
+            const userLoyalty = await prisma.userLoyaltyLevel.findUnique({
+                where: {
+                    userId_streamerId: {
+                        userId: msg.authorId,
+                        streamerId: stream.streamerId,
+                    },
+                },
+                include: { loyaltyLevel: true },
             });
-        });
-
-        // Obtener el primer nivel configurado para fallback
-        const firstLevel = allLevels[0];
-        const defaultLevelName = firstLevel?.nombre || 'Espectador';
-
-        // Enriquecer mensajes con nivel persistido
-        const enrichedMessages = messages.map(msg => {
-            const levelData = levelMap.get(msg.authorId) || { level: 0, name: defaultLevelName };
-            const authorData = {
-                ...msg.author,
-                level: levelData.level,
-                levelName: levelData.name,
-            };
 
             return {
-                ...msg,
-                author: authorData,
-                user: authorData, // Enviar también como user para compatibilidad
+                id: msg.id,
+                streamId: msg.streamId,
+                userId: msg.authorId,
+                texto: msg.text,
+                hora: msg.createdAt.toISOString(),
+                user: {
+                    id: msg.author.id,
+                    name: msg.author.name,
+                    pfp: msg.author.pfp,
+                    levelName: userLoyalty?.loyaltyLevel?.nombre || 'Novato',
+                },
+                createdAt: msg.createdAt,
             };
-        });
-
-        // Debug logging
-        if (enrichedMessages.length > 0) {
-            console.log('🔍 History Endpoint Debug:', {
-                firstMsgUser: enrichedMessages[0].user,
-                firstMsgAuthor: enrichedMessages[0].author,
-                levelMapSize: levelMap.size,
-                defaultLevelName
-            });
-        }
+        }));
 
         return res.status(200).json({
             success: true,
-            messages: enrichedMessages.reverse(), // Devolver en orden cronológico para el chat
-            total,
+            messages: enrichedMessages.reverse(), // Devolver en orden cronológico
         });
     } catch (error) {
-        console.error('Error al obtener mensajes:', error);
-        res.status(500).json({ error: 'Error al obtener mensajes' });
+        console.error('Error al obtener historial:', error);
+        res.status(500).json({ error: 'Error al obtener historial' });
     }
 });
 
-// DELETE /api/chat/message/:messageId - Eliminar mensaje
-router.delete('/message/:messageId', async (req: Request, res: Response) => {
+// GET /api/chat/message/:messageId - Obtener un mensaje específico
+router.get('/message/:messageId', async (req: Request, res: Response) => {
     try {
-        if (!req.user) {
-            return res.status(401).json({ error: 'No autenticado' });
-        }
-
         const { messageId } = req.params;
 
         const message = await prisma.chatMessage.findUnique({
             where: { id: messageId },
+            include: {
+                author: {
+                    select: {
+                        id: true,
+                        name: true,
+                        pfp: true,
+                    },
+                },
+            },
         });
 
         if (!message) {
             return res.status(404).json({ error: 'Mensaje no encontrado' });
         }
 
-        // Solo el autor o el dueño del stream pueden borrar
-        if (message.authorId !== req.user.userId && message.streamOwnerId !== req.user.userId) {
-            return res.status(403).json({ error: 'No tienes permiso para eliminar este mensaje' });
-        }
-
-        await prisma.chatMessage.delete({
-            where: { id: messageId },
-        });
-
-        return res.status(200).json({
-            success: true,
-            message: 'Mensaje eliminado correctamente',
-        });
+        return res.status(200).json({ success: true, message });
     } catch (error) {
-        console.error('Error al eliminar mensaje:', error);
-        res.status(500).json({ error: 'Error al eliminar mensaje' });
+        console.error('Error al obtener mensaje:', error);
+        res.status(500).json({ error: 'Error al obtener mensaje' });
     }
 });
 

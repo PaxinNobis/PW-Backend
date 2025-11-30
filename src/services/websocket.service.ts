@@ -469,7 +469,7 @@ function handleLeave(ws: WebSocketClient) {
 }
 
 // Helper para broadcast
-function broadcastToRoom(streamId: string, data: any, excludeClient?: WebSocketClient) {
+export function broadcastToRoom(streamId: string, data: any, excludeClient?: WebSocketClient) {
   const room = chatRooms.get(streamId);
   if (room) {
     const messageData = JSON.stringify(data);

@@ -39,7 +39,18 @@ export const prisma = new PrismaClient();
 
 // Middlewares globales de Express
 app.use(cors());
-app.use(express.json());
+
+// Middleware para webhook de Stripe (necesita raw body)
+app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
+
+// Middleware global para JSON (excluyendo webhook)
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/payment/webhook') {
+    next();
+  } else {
+    express.json()(req, res, next);
+  }
+});
 
 // Ruta de salud
 app.get('/health', (req, res) => {

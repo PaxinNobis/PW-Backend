@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { updateUserLoyaltyLevel, calculateGlobalLevel } from '../utils/level.utils';
+import { broadcastToRoom } from '../services/websocket.service';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -47,14 +48,22 @@ router.post('/send', authMiddleware, async (req: Request, res: Response) => {
             });
         }
 
-        // 3. Obtener el streamer
+        // 3. Obtener el streamer y su stream activo
         const streamer = await prisma.user.findUnique({
             where: { id: streamerId },
+            include: {
+                streams: {
+                    where: { isLive: true },
+                    take: 1,
+                }
+            }
         });
 
         if (!streamer) {
             return res.status(404).json({ error: 'Streamer no encontrado' });
         }
+
+        const activeStream = streamer.streams[0];
 
         // 4. Ejecutar transacción (usando transacción de Prisma para atomicidad)
         const result = await prisma.$transaction(async (tx) => {
@@ -108,11 +117,7 @@ router.post('/send', authMiddleware, async (req: Request, res: Response) => {
                 },
             });
 
-            // d. Registrar transacción (historial de compra)
-            // Nota: Asumimos que Transaction se usa para compras de monedas, pero podemos reusarlo o crear uno nuevo.
-            // Dado que Transaction parece estar ligado a Stripe/Pagos reales, tal vez sea mejor usar PointsHistory o crear GiftHistory.
-            // Por simplicidad y siguiendo el esquema existente, usaremos PointsHistory para el rastro de puntos y crearemos una notificación.
-
+            // d. Registrar en historial de puntos
             await tx.pointsHistory.create({
                 data: {
                     userId: user.id,
@@ -125,8 +130,7 @@ router.post('/send', authMiddleware, async (req: Request, res: Response) => {
             return { updatedUser, userPoints };
         });
 
-        // 5. Actualizar nivel de lealtad (fuera de la transacción para no bloquear si falla algo no crítico, o dentro si es crítico)
-        // Lo hacemos fuera para usar la utilidad existente que maneja su propia lógica
+        // 5. Actualizar nivel de lealtad
         const loyaltyLevels = await prisma.loyaltyLevel.findMany({
             where: { streamerId },
             orderBy: { puntosRequeridos: 'asc' },
@@ -139,6 +143,22 @@ router.post('/send', authMiddleware, async (req: Request, res: Response) => {
             result.userPoints.points,
             loyaltyLevels
         );
+
+        // 6. Emitir evento WebSocket para notificar a todos en el stream
+        if (activeStream) {
+            broadcastToRoom(activeStream.id, {
+                type: 'gift',
+                data: {
+                    giftName: gift.nombre,
+                    giftCost: gift.costo,
+                    senderName: user.name,
+                    senderId: user.id,
+                    streamerName: streamer.name,
+                    streamerId: streamer.id,
+                    timestamp: new Date().toISOString(),
+                }
+            });
+        }
 
         return res.status(200).json({
             success: true,
