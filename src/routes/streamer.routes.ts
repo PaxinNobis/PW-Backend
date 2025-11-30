@@ -390,10 +390,14 @@ router.put('/settings', async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'No hay juegos disponibles en la base de datos' });
       }
 
+      // Obtener nombre de usuario de forma segura
+      const userAny = req.user as any;
+      const streamTitle = title || `Stream de ${userAny.userName || 'Usuario'}`;
+
       // CREAR NUEVO STREAM con ID único
       updatedStream = await prisma.stream.create({
         data: {
-          title: title || `Stream de ${(req.user as any).userName || 'Usuario'}`,
+          title: streamTitle,
           thumbnail: activeStream?.thumbnail || 'https://via.placeholder.com/300x200',
           streamerId: userId,
           gameId: finalGameId,
