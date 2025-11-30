@@ -38,6 +38,10 @@ router.post('/create-checkout-session', authMiddleware, async (req: Request, res
       return res.status(400).json({ error: 'Se requiere coinPackId o amount' });
     }
 
+    if (coinPackId && typeof coinPackId !== 'string') {
+      return res.status(400).json({ error: 'coinPackId debe ser un UUID válido (string)' });
+    }
+
     let priceInSoles = 0;
     let coinsToGive = 0;
     let productName = '';
