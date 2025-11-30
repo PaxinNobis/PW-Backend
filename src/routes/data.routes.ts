@@ -8,6 +8,7 @@ const prisma = new PrismaClient();
 router.get('/streams', async (req: Request, res: Response) => {
   try {
     const streams = await prisma.stream.findMany({
+      where: { isLive: true }, // Solo streams activos
       include: {
         streamer: {
           select: {
@@ -97,6 +98,7 @@ router.get('/streams/details/:nickname', async (req: Request, res: Response) => 
         streamer: {
           name: nickname,
         },
+        isLive: true, // Solo el stream activo
       },
       include: {
         streamer: {
@@ -140,6 +142,7 @@ router.get('/search/:query', async (req: Request, res: Response) => {
 
     const streams = await prisma.stream.findMany({
       where: {
+        isLive: true, // Solo streams activos
         OR: [
           {
             title: {

@@ -90,6 +90,7 @@ async function handleJoin(ws: WebSocketClient, message: any) {
         streamer: {
           name: streamerNickname,
         },
+        isLive: true, // Solo el stream activo
       },
       include: {
         streamer: {

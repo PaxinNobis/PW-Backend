@@ -25,10 +25,6 @@ router.post('/register', async (req: Request, res: Response) => {
   // Hashear contraseña
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  // Obtener el primer juego para asignar por defecto
-  const defaultGame = await prisma.game.findFirst();
-  const defaultGameId = defaultGame?.id;
-
   // Crear usuario
   const user = await prisma.user.create({
     data: {
@@ -38,15 +34,6 @@ router.post('/register', async (req: Request, res: Response) => {
       level: 1,
       points: 0,
       coins: 0,
-      // Crear stream por defecto si hay un juego disponible
-      stream: defaultGameId ? {
-        create: {
-          title: `Stream de ${name}`,
-          thumbnail: 'https://via.placeholder.com/300x200',
-          gameId: defaultGameId,
-          isLive: false,
-        }
-      } : undefined,
       // Crear niveles de lealtad por defecto para este usuario (como streamer)
       loyaltyLevels: {
         create: [

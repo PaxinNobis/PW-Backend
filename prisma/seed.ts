@@ -94,16 +94,6 @@ async function main() {
 
     // Solo crear stream si el streamer no tiene uno ya
     if (streamer && game && !usedStreamers.has(streamer.id)) {
-      // Verificar si ya existe en la BD
-      const existingStream = await prisma.stream.findUnique({
-        where: { streamerId: streamer.id }
-      });
-
-      if (existingStream) {
-        usedStreamers.add(streamer.id);
-        continue;
-      }
-
       usedStreamers.add(streamer.id);
 
       // Buscar los tags del stream
@@ -123,6 +113,7 @@ async function main() {
           thumbnail: streamData.thumbnail,
           viewers: streamData.viewers,
           isLive: true,
+          startedAt: new Date(), // Fecha de inicio del stream
           streamerId: streamer.id,
           gameId: game.id,
           tags: {

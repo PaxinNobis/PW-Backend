@@ -317,38 +317,102 @@ router.put('/settings', async (req: Request, res: Response) => {
     const { title, gameId, tags, iframeUrl, isLive } = req.body;
     const userId = req.user.userId;
 
-    // Validar que el usuario tenga un stream
-    const stream = await prisma.stream.findUnique({
-      where: { streamerId: userId },
+    // Buscar el stream activo actual (si existe)
+    const activeStream = await prisma.stream.findFirst({
+      where: {
+        streamerId: userId,
+        isLive: true
+      },
     });
 
-    if (!stream) {
-      return res.status(404).json({ error: 'Stream no encontrado para este usuario' });
-    }
+    let updatedStream;
 
-    // Lógica de Analíticas y Duración
-    let startedAtUpdate: Date | null | undefined = undefined;
+    // CASO 1: Iniciar stream (isLive: true)
+    if (isLive === true) {
+      // Si ya hay un stream activo, terminarlo primero
+      if (activeStream) {
+        const now = new Date();
+        const durationMs = activeStream.startedAt
+          ? now.getTime() - activeStream.startedAt.getTime()
+          : 0;
+        const durationHours = durationMs / (1000 * 60 * 60);
 
-    // Si se está iniciando el stream (isLive cambia de false a true)
-    if (isLive === true && !stream.isLive) {
-      startedAtUpdate = new Date();
-    }
-    // Si se está terminando el stream (isLive cambia de true a false)
-    else if (isLive === false && stream.isLive && stream.startedAt) {
-      const now = new Date();
-      const durationMs = now.getTime() - stream.startedAt.getTime();
-      const durationHours = durationMs / (1000 * 60 * 60); // Convertir a horas
+        if (durationHours > 0) {
+          await prisma.user.update({
+            where: { id: userId },
+            data: { streamingHours: { increment: durationHours } }
+          });
 
-      if (durationHours > 0) {
-        // Actualizar horas del usuario
-        await prisma.user.update({
-          where: { id: userId },
+          await prisma.analytics.upsert({
+            where: { streamerId: userId },
+            create: {
+              streamerId: userId,
+              horasTransmitidas: durationHours,
+              monedasRecibidas: 0
+            },
+            update: {
+              horasTransmitidas: { increment: durationHours }
+            }
+          });
+        }
+
+        await prisma.stream.update({
+          where: { id: activeStream.id },
           data: {
-            streamingHours: { increment: durationHours }
+            isLive: false,
+            endedAt: now
           }
         });
+      }
 
-        // Actualizar o crear analíticas
+      // Obtener gameId: usar el proporcionado o el del stream anterior o el primero disponible
+      let finalGameId = gameId;
+      if (!finalGameId && activeStream) {
+        finalGameId = activeStream.gameId;
+      }
+      if (!finalGameId) {
+        const defaultGame = await prisma.game.findFirst();
+        finalGameId = defaultGame?.id;
+      }
+
+      if (!finalGameId) {
+        return res.status(400).json({ error: 'No hay juegos disponibles en la base de datos' });
+      }
+
+      // CREAR NUEVO STREAM con ID único
+      updatedStream = await prisma.stream.create({
+        data: {
+          title: title || `Stream de ${req.user.userName || 'Usuario'}`,
+          thumbnail: activeStream?.thumbnail || 'https://via.placeholder.com/300x200',
+          streamerId: userId,
+          gameId: finalGameId,
+          isLive: true,
+          startedAt: new Date(),
+          iframeUrl: iframeUrl || activeStream?.iframeUrl || null,
+          tags: tags ? {
+            connect: tags.map((tagId: string) => ({ id: tagId }))
+          } : undefined,
+        },
+        include: {
+          game: true,
+          tags: true,
+        }
+      });
+    }
+    // CASO 2: Detener stream (isLive: false)
+    else if (isLive === false && activeStream) {
+      const now = new Date();
+      const durationMs = activeStream.startedAt
+        ? now.getTime() - activeStream.startedAt.getTime()
+        : 0;
+      const durationHours = durationMs / (1000 * 60 * 60);
+
+      if (durationHours > 0) {
+        await prisma.user.update({
+          where: { id: userId },
+          data: { streamingHours: { increment: durationHours } }
+        });
+
         await prisma.analytics.upsert({
           where: { streamerId: userId },
           create: {
@@ -362,30 +426,39 @@ router.put('/settings', async (req: Request, res: Response) => {
         });
       }
 
-      // Resetear startedAt
-      startedAtUpdate = null;
+      updatedStream = await prisma.stream.update({
+        where: { id: activeStream.id },
+        data: {
+          isLive: false,
+          endedAt: now
+        },
+        include: {
+          game: true,
+          tags: true,
+        }
+      });
     }
-
-    // Actualizar stream
-    const updatedStream = await prisma.stream.update({
-      where: { streamerId: userId },
-      data: {
-        title: title !== undefined ? title : undefined,
-        gameId: gameId !== undefined ? gameId : undefined,
-        iframeUrl: iframeUrl !== undefined ? iframeUrl : undefined,
-        isLive: isLive !== undefined ? isLive : undefined,
-        startedAt: startedAtUpdate, // Actualizar fecha de inicio
-        // Actualizar tags si se proporcionan (array de IDs)
-        tags: tags ? {
-          set: [], // Limpiar tags existentes
-          connect: tags.map((tagId: string) => ({ id: tagId })), // Conectar nuevos
-        } : undefined,
-      },
-      include: {
-        game: true,
-        tags: true,
-      }
-    });
+    // CASO 3: Actualizar configuración sin cambiar estado de live
+    else if (activeStream) {
+      updatedStream = await prisma.stream.update({
+        where: { id: activeStream.id },
+        data: {
+          title: title !== undefined ? title : undefined,
+          gameId: gameId !== undefined ? gameId : undefined,
+          iframeUrl: iframeUrl !== undefined ? iframeUrl : undefined,
+          tags: tags ? {
+            set: [],
+            connect: tags.map((tagId: string) => ({ id: tagId })),
+          } : undefined,
+        },
+        include: {
+          game: true,
+          tags: true,
+        }
+      });
+    } else {
+      return res.status(404).json({ error: 'No hay stream activo para actualizar' });
+    }
 
     return res.status(200).json({
       success: true,

@@ -34,7 +34,7 @@ model User {
   currentLevel   StreamerLevel? @relation(fields: [currentLevelId], references: [id])
 
   // --- Relaciones de Streamer ---
-  stream           Stream? // Un usuario (streamer) tiene un stream
+  streams          Stream[] // Un usuario (streamer) puede tener múltiples streams (historial)
   analytics        Analytics? // Analíticas del streamer
   customGifts      Gift[] // Regalos personalizados del streamer
   loyaltyLevels    LoyaltyLevel[] // Niveles de lealtad del streamer
@@ -89,7 +89,7 @@ model Stream {
   iframeUrl  String? // URL del iframe de VDO.Ninja o similar
 
   streamer   User   @relation(fields: [streamerId], references: [id])
-  streamerId String @unique // Un stream pertenece a un solo User
+  streamerId String // Un usuario puede tener múltiples streams (historial)
 
   game   Game   @relation(fields: [gameId], references: [id])
   gameId String
@@ -97,6 +97,8 @@ model Stream {
   tags           Tag[]           @relation("StreamTags")
   chatMessages   ChatMessage[]
   activeViewers  ActiveViewer[]
+  
+  endedAt    DateTime? // Fecha de finalización de la transmisión
 
   @@map("streams")
 }

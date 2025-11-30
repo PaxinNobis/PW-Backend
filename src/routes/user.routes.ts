@@ -19,7 +19,8 @@ router.get('/following', async (req: Request, res: Response) => {
             id: true,
             name: true,
             email: true,
-            stream: {
+            streams: {
+              where: { isLive: true }, // Solo el stream activo
               select: {
                 id: true,
                 title: true,
@@ -27,6 +28,7 @@ router.get('/following', async (req: Request, res: Response) => {
                 viewers: true,
                 isLive: true,
               },
+              take: 1, // Solo el stream activo más reciente
             },
           },
         },
@@ -37,9 +39,9 @@ router.get('/following', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
-    return res.status(200).json({ 
+    return res.status(200).json({
       success: true,
-      following: user.following 
+      following: user.following
     });
   } catch (error) {
     console.error('Error al obtener following:', error);
@@ -95,10 +97,10 @@ router.post('/follow/:identifier', async (req: Request, res: Response) => {
         },
       });
 
-      return res.status(200).json({ 
+      return res.status(200).json({
         success: true,
-        message: 'Has dejado de seguir al streamer', 
-        isFollowing: false 
+        message: 'Has dejado de seguir al streamer',
+        isFollowing: false
       });
     } else {
       // Seguir
@@ -111,10 +113,10 @@ router.post('/follow/:identifier', async (req: Request, res: Response) => {
         },
       });
 
-      return res.status(200).json({ 
+      return res.status(200).json({
         success: true,
-        message: 'Ahora sigues al streamer', 
-        isFollowing: true 
+        message: 'Ahora sigues al streamer',
+        isFollowing: true
       });
     }
   } catch (error) {
