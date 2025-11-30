@@ -134,7 +134,6 @@ router.post('/create-checkout-session', authMiddleware, async (req: Request, res
 
 // POST /api/payment/verify-session - Verificar estado de sesión (para localhost/fallback)
 router.post('/verify-session', authMiddleware, async (req: Request, res: Response) => {
-  console.log('🔍 Verificando sesión:', req.body);
   try {
     const { sessionId } = req.body;
 
@@ -149,14 +148,11 @@ router.post('/verify-session', authMiddleware, async (req: Request, res: Respons
     });
 
     if (existingTransaction) {
-      console.log('Pago ya procesado anteriormente');
       return res.status(200).json({ success: true, message: 'Pago ya procesado anteriormente' });
     }
 
     // 2. Consultar a Stripe
-    console.log('Consultando Stripe para sesión:', sessionId);
     const session = await stripe.checkout.sessions.retrieve(sessionId);
-    console.log('Estado del pago en Stripe:', session.payment_status);
 
     if (session.payment_status === 'paid') {
       const userId = session.metadata?.userId;
@@ -253,7 +249,6 @@ router.post('/webhook', async (req: Request, res: Response) => {
     });
 
     if (existingTransaction) {
-      console.log(`Sesión ${sessionId} ya procesada. Ignorando webhook.`);
       return res.status(200).json({ received: true });
     }
 
@@ -275,7 +270,6 @@ router.post('/webhook', async (req: Request, res: Response) => {
               where: { id: userId },
               data: { coins: { increment: coinValue } },
             });
-            console.log(`Se agregaron ${coinValue} monedas al usuario ${userId} (Webhook - Update)`);
             return;
           }
 
@@ -303,7 +297,6 @@ router.post('/webhook', async (req: Request, res: Response) => {
             where: { id: userId },
             data: { coins: { increment: coinValue } },
           });
-          console.log(`Se agregaron ${coinValue} monedas al usuario ${userId} (Webhook - Create)`);
         });
       } catch (error) {
         console.error('Error al actualizar monedas del usuario:', error);

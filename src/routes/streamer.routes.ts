@@ -464,9 +464,7 @@ router.put('/settings', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error al actualizar configuración del stream:', error);
-    // @ts-ignore
-    console.error('Detalles del error:', error.message, error.code, error.meta);
-    res.status(500).json({ error: 'Error al actualizar configuración del stream', details: (error as any).message });
+    res.status(500).json({ error: 'Error al actualizar configuración del stream' });
   }
 });
 
