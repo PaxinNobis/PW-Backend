@@ -29,7 +29,7 @@ model User {
   coins  Int? // Saldo de monedas (RF009)
 
   // --- Datos de Streamer ---
-  streamingHours Int? @default(0) // Horas de streaming acumuladas
+  streamingHours Float? @default(0) // Horas de streaming acumuladas
   currentLevelId String? // Nivel actual del streamer
   currentLevel   StreamerLevel? @relation(fields: [currentLevelId], references: [id])
 
@@ -85,6 +85,8 @@ model Stream {
   thumbnail  String
   viewers    Int     @default(0)
   isLive     Boolean @default(false)
+  startedAt  DateTime? // Fecha de inicio de la transmisión actual
+  iframeUrl  String? // URL del iframe de VDO.Ninja o similar
 
   streamer   User   @relation(fields: [streamerId], references: [id])
   streamerId String @unique // Un stream pertenece a un solo User

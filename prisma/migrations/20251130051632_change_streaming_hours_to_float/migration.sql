@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "users" ALTER COLUMN "streamingHours" SET DEFAULT 0,
+ALTER COLUMN "streamingHours" SET DATA TYPE DOUBLE PRECISION;

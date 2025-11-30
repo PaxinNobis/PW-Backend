@@ -307,4 +307,95 @@ router.get('/:streamerId/loyalty-levels', async (req: Request, res: Response) =>
   }
 });
 
+// PUT /api/streamer/settings - Actualizar configuración del stream
+router.put('/settings', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'No autenticado' });
+    }
+
+    const { title, gameId, tags, iframeUrl, isLive } = req.body;
+    const userId = req.user.userId;
+
+    // Validar que el usuario tenga un stream
+    const stream = await prisma.stream.findUnique({
+      where: { streamerId: userId },
+    });
+
+    if (!stream) {
+      return res.status(404).json({ error: 'Stream no encontrado para este usuario' });
+    }
+
+    // Lógica de Analíticas y Duración
+    let startedAtUpdate: Date | null | undefined = undefined;
+
+    // Si se está iniciando el stream (isLive cambia de false a true)
+    if (isLive === true && !stream.isLive) {
+      startedAtUpdate = new Date();
+    }
+    // Si se está terminando el stream (isLive cambia de true a false)
+    else if (isLive === false && stream.isLive && stream.startedAt) {
+      const now = new Date();
+      const durationMs = now.getTime() - stream.startedAt.getTime();
+      const durationHours = durationMs / (1000 * 60 * 60); // Convertir a horas
+
+      if (durationHours > 0) {
+        // Actualizar horas del usuario
+        await prisma.user.update({
+          where: { id: userId },
+          data: {
+            streamingHours: { increment: durationHours }
+          }
+        });
+
+        // Actualizar o crear analíticas
+        await prisma.analytics.upsert({
+          where: { streamerId: userId },
+          create: {
+            streamerId: userId,
+            horasTransmitidas: durationHours,
+            monedasRecibidas: 0
+          },
+          update: {
+            horasTransmitidas: { increment: durationHours }
+          }
+        });
+      }
+
+      // Resetear startedAt
+      startedAtUpdate = null;
+    }
+
+    // Actualizar stream
+    const updatedStream = await prisma.stream.update({
+      where: { streamerId: userId },
+      data: {
+        title: title !== undefined ? title : undefined,
+        gameId: gameId !== undefined ? gameId : undefined,
+        iframeUrl: iframeUrl !== undefined ? iframeUrl : undefined,
+        isLive: isLive !== undefined ? isLive : undefined,
+        startedAt: startedAtUpdate, // Actualizar fecha de inicio
+        // Actualizar tags si se proporcionan (array de IDs)
+        tags: tags ? {
+          set: [], // Limpiar tags existentes
+          connect: tags.map((tagId: string) => ({ id: tagId })), // Conectar nuevos
+        } : undefined,
+      },
+      include: {
+        game: true,
+        tags: true,
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Configuración de stream actualizada',
+      stream: updatedStream,
+    });
+  } catch (error) {
+    console.error('Error al actualizar configuración del stream:', error);
+    res.status(500).json({ error: 'Error al actualizar configuración del stream' });
+  }
+});
+
 export default router;
