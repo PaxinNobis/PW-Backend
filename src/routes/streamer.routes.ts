@@ -325,7 +325,7 @@ router.put('/settings', async (req: Request, res: Response) => {
     if (!token) {
       return res.status(401).json({ error: 'Token no proporcionado' });
     }
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret') as any; // Cast a any para evitar error de tipo
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret') as any;
     const userName = decoded.userName || decoded.name || 'Streamer';
 
     // Buscar el stream activo actual (si existe)
@@ -393,7 +393,7 @@ router.put('/settings', async (req: Request, res: Response) => {
       // CREAR NUEVO STREAM con ID único
       updatedStream = await prisma.stream.create({
         data: {
-          title: title || `Stream de ${req.user.userName || 'Usuario'}`,
+          title: title || `Stream de ${(req.user as any).userName || 'Usuario'}`,
           thumbnail: activeStream?.thumbnail || 'https://via.placeholder.com/300x200',
           streamerId: userId,
           gameId: finalGameId,
