@@ -1,5 +1,6 @@
 {
   "name": "astrotv-backend",
+  "homepage": "https://PaxinNobis.github.io/PW-Frontend/",
   "version": "1.0.0",
   "description": "Backend API para la plataforma de streaming AstroTV",
   "main": "dist/index.js",
