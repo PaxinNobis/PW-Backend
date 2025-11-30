@@ -24,6 +24,8 @@ interface WebSocketClient extends WebSocket {
 const chatRooms = new Map<string, Set<WebSocketClient>>();
 // Map auxiliar para referenciar rápidamente conexiones por usuario dentro de un stream
 const roomParticipants = new Map<string, Map<string, WebSocketClient>>();
+// Map global de usuarios conectados (userId -> WebSocket)
+const connectedUsers = new Map<string, WebSocketClient>();
 
 export const handleWebSocketConnection = (ws: WebSocketClient) => {
   console.log('Nueva conexión WebSocket establecida');
@@ -36,6 +38,10 @@ export const handleWebSocketConnection = (ws: WebSocketClient) => {
       switch (message.type) {
         case 'join':
           await handleJoin(ws, message);
+          // Registrar usuario en el mapa global si se autentica
+          if (ws.userId) {
+            connectedUsers.set(ws.userId, ws);
+          }
           break;
         case 'chat':
           await handleChatMessage(ws, message);
@@ -57,13 +63,29 @@ export const handleWebSocketConnection = (ws: WebSocketClient) => {
 
   ws.on('close', () => {
     console.log('Conexión WebSocket cerrada');
+    if (ws.userId) {
+      connectedUsers.delete(ws.userId);
+    }
     handleLeave(ws);
   });
 
   ws.on('error', (error) => {
     console.error('Error en WebSocket:', error);
+    if (ws.userId) {
+      connectedUsers.delete(ws.userId);
+    }
   });
 };
+
+// Helper para enviar mensaje a un usuario específico
+export function sendToUser(userId: string, data: any) {
+  const client = connectedUsers.get(userId);
+  if (client && client.readyState === WebSocket.OPEN) {
+    client.send(JSON.stringify(data));
+    return true;
+  }
+  return false;
+}
 
 // Función para unirse a un chat de un stream
 async function handleJoin(ws: WebSocketClient, message: any) {

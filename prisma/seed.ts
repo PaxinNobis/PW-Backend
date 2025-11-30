@@ -131,14 +131,17 @@ async function main() {
   console.log(`Streams creados: ${streamsCreated}`);
 
   // Crear analíticas para los streamers
-  await prisma.analytics.createMany({
-    data: allStreamers.map((streamer: any) => ({
-      streamerId: streamer.id,
-      horasTransmitidas: Math.floor(Math.random() * 300) + 100,
-      monedasRecibidas: Math.floor(Math.random() * 20000) + 5000,
-    })),
-    skipDuplicates: true,
-  });
+  // Actualizar datos de streamer (horas y monedas)
+  for (const streamer of allStreamers) {
+    await prisma.user.update({
+      where: { id: streamer.id },
+      data: {
+        streamingHours: Math.floor(Math.random() * 300) + 100,
+        monedasRecibidas: Math.floor(Math.random() * 20000) + 5000,
+      }
+    });
+  }
+  console.log(`Datos de streamer actualizados para ${allStreamers.length} usuarios`);
   console.log(`Analíticas creadas: ${allStreamers.length}`);
 
   // Crear paquetes de monedas

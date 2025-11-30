@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import jwt from 'jsonwebtoken';
+import { createNotification } from '../services/notification.service';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -8,17 +9,17 @@ const prisma = new PrismaClient();
 // Definición de los 12 niveles de streamer
 const LEVELS = [
   { id: 1, name: 'Astronauta Novato', minFollowers: 0, maxFollowers: 100, minHours: 0, maxHours: 50, rewards: 'Badge de Novato', levelOrder: 1 },
-  { id: 2, name: 'Explorador Planetario', minFollowers: 101, maxFollowers: 500, minHours: 51, maxHours: 150, rewards: 'Badge de Explorador + Emote personalizado', levelOrder: 2 },
-  { id: 3, name: 'Piloto Lunar', minFollowers: 501, maxFollowers: 1500, minHours: 151, maxHours: 300, rewards: 'Badge de Piloto + 2 Emotes personalizados', levelOrder: 3 },
-  { id: 4, name: 'Comandante Estelar', minFollowers: 1501, maxFollowers: 5000, minHours: 301, maxHours: 500, rewards: 'Badge de Comandante + 3 Emotes + Sub-badges', levelOrder: 4 },
-  { id: 5, name: 'Coronel Galáctico', minFollowers: 5001, maxFollowers: 15000, minHours: 501, maxHours: 800, rewards: 'Badge de Coronel + 5 Emotes + Sub-badges + Chat personalizado', levelOrder: 5 },
-  { id: 6, name: 'General Cósmico', minFollowers: 15001, maxFollowers: 50000, minHours: 801, maxHours: 1200, rewards: 'Badge de General + 10 Emotes + Verificación', levelOrder: 6 },
-  { id: 7, name: 'Señor Universal', minFollowers: 50001, maxFollowers: 150000, minHours: 1201, maxHours: 2000, rewards: 'Badge de Señor + 15 Emotes + Partner', levelOrder: 7 },
-  { id: 8, name: 'Emperador Multiversal', minFollowers: 150001, maxFollowers: 500000, minHours: 2001, maxHours: 3000, rewards: 'Badge de Emperador + 20 Emotes + Prioridad soporte', levelOrder: 8 },
-  { id: 9, name: 'Leyenda Omniversal', minFollowers: 500001, maxFollowers: 1500000, minHours: 3001, maxHours: 4500, rewards: 'Badge de Leyenda + 30 Emotes + Eventos exclusivos', levelOrder: 9 },
-  { id: 10, name: 'Entidad Primigenia', minFollowers: 1500001, maxFollowers: 5000000, minHours: 4501, maxHours: 6500, rewards: 'Badge de Entidad + 50 Emotes + Página destacada', levelOrder: 10 },
-  { id: 11, name: 'Titán Dimensional', minFollowers: 5000001, maxFollowers: 10000000, minHours: 6501, maxHours: 9000, rewards: 'Badge de Titán + 75 Emotes + Merchandising oficial', levelOrder: 11 },
-  { id: 12, name: 'Deidad Eterna', minFollowers: 10000001, maxFollowers: 25000000, minHours: 9001, maxHours: 12000, rewards: 'Badge de Deidad + 100 Emotes + Estatua en Hall of Fame', levelOrder: 12 },
+  { id: 2, name: 'Explorador Planetario', minFollowers: 0, maxFollowers: 500, minHours: 51, maxHours: 150, rewards: 'Badge de Explorador + Emote personalizado', levelOrder: 2 },
+  { id: 3, name: 'Piloto Lunar', minFollowers: 0, maxFollowers: 1500, minHours: 151, maxHours: 300, rewards: 'Badge de Piloto + 2 Emotes personalizados', levelOrder: 3 },
+  { id: 4, name: 'Comandante Estelar', minFollowers: 0, maxFollowers: 5000, minHours: 301, maxHours: 500, rewards: 'Badge de Comandante + 3 Emotes + Sub-badges', levelOrder: 4 },
+  { id: 5, name: 'Coronel Galáctico', minFollowers: 0, maxFollowers: 15000, minHours: 501, maxHours: 800, rewards: 'Badge de Coronel + 5 Emotes + Sub-badges + Chat personalizado', levelOrder: 5 },
+  { id: 6, name: 'General Cósmico', minFollowers: 0, maxFollowers: 50000, minHours: 801, maxHours: 1200, rewards: 'Badge de General + 10 Emotes + Verificación', levelOrder: 6 },
+  { id: 7, name: 'Señor Universal', minFollowers: 0, maxFollowers: 150000, minHours: 1201, maxHours: 2000, rewards: 'Badge de Señor + 15 Emotes + Partner', levelOrder: 7 },
+  { id: 8, name: 'Emperador Multiversal', minFollowers: 0, maxFollowers: 500000, minHours: 2001, maxHours: 3000, rewards: 'Badge de Emperador + 20 Emotes + Prioridad soporte', levelOrder: 8 },
+  { id: 9, name: 'Leyenda Omniversal', minFollowers: 0, maxFollowers: 1500000, minHours: 3001, maxHours: 4500, rewards: 'Badge de Leyenda + 30 Emotes + Eventos exclusivos', levelOrder: 9 },
+  { id: 10, name: 'Entidad Primigenia', minFollowers: 0, maxFollowers: 5000000, minHours: 4501, maxHours: 6500, rewards: 'Badge de Entidad + 50 Emotes + Página destacada', levelOrder: 10 },
+  { id: 11, name: 'Titán Dimensional', minFollowers: 0, maxFollowers: 10000000, minHours: 6501, maxHours: 9000, rewards: 'Badge de Titán + 75 Emotes + Merchandising oficial', levelOrder: 11 },
+  { id: 12, name: 'Deidad Eterna', minFollowers: 0, maxFollowers: 25000000, minHours: 9001, maxHours: 12000, rewards: 'Badge de Deidad + 100 Emotes + Estatua en Hall of Fame', levelOrder: 12 },
 ];
 
 // Función auxiliar para calcular el nivel actual
@@ -189,6 +190,20 @@ router.put('/hours', async (req: Request, res: Response) => {
     // Verificar si subió de nivel
     const levelUp = levelAfter.levelOrder > levelBefore.levelOrder;
 
+    if (levelUp) {
+      await createNotification({
+        userId,
+        type: 'level_up',
+        title: '¡Subiste de Nivel!',
+        message: `¡Felicidades! Has alcanzado el nivel ${levelAfter.name}.`,
+        data: {
+          oldLevel: levelBefore.name,
+          newLevel: levelAfter.name,
+          rewards: levelAfter.rewards
+        }
+      });
+    }
+
     return res.status(200).json({
       success: true,
       newTotal,
@@ -227,13 +242,13 @@ router.get('/stats', async (req: Request, res: Response) => {
             followedBy: true,
           },
         },
-        streams: { // Cambiado de stream a streams
+        streams: {
           where: { isLive: true },
           select: {
             viewers: true,
           },
           take: 1
-        },
+        }
       },
     });
 
@@ -241,13 +256,13 @@ router.get('/stats', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
-    // Calcular promedio de viewers (esto es simplificado, idealmente guardarías histórico)
-    const currentViewers = user.streams[0]?.viewers || 0; // Acceder al primer stream
+    const finalStreamingHours = user.streamingHours || 0;
+    const currentViewers = user.streams[0]?.viewers || 0;
 
     return res.status(200).json({
       success: true,
       followers: user._count.followedBy,
-      streamingHours: user.streamingHours || 0,
+      streamingHours: finalStreamingHours,
       totalViewers: currentViewers, // Simplificado
       averageViewers: currentViewers, // Simplificado
     });
@@ -354,17 +369,6 @@ router.put('/settings', async (req: Request, res: Response) => {
             data: { streamingHours: { increment: durationHours } }
           });
 
-          await prisma.analytics.upsert({
-            where: { streamerId: userId },
-            create: {
-              streamerId: userId,
-              horasTransmitidas: durationHours,
-              monedasRecibidas: 0
-            },
-            update: {
-              horasTransmitidas: { increment: durationHours }
-            }
-          });
         }
 
         await prisma.stream.update({
@@ -420,24 +424,13 @@ router.put('/settings', async (req: Request, res: Response) => {
       const durationMs = activeStream.startedAt
         ? now.getTime() - activeStream.startedAt.getTime()
         : 0;
-      const durationHours = durationMs / (1000 * 60 * 60);
+      const durationHours = parseFloat((durationMs / (1000 * 60 * 60)).toFixed(2));
 
       if (durationHours > 0) {
+        // Actualizar horas del usuario (Fuente de verdad única)
         await prisma.user.update({
           where: { id: userId },
           data: { streamingHours: { increment: durationHours } }
-        });
-
-        await prisma.analytics.upsert({
-          where: { streamerId: userId },
-          create: {
-            streamerId: userId,
-            horasTransmitidas: durationHours,
-            monedasRecibidas: 0
-          },
-          update: {
-            horasTransmitidas: { increment: durationHours }
-          }
         });
       }
 
@@ -484,6 +477,14 @@ router.put('/settings', async (req: Request, res: Response) => {
     console.error('Error al actualizar configuración del stream:', error);
     res.status(500).json({ error: 'Error al actualizar configuración del stream' });
   }
+});
+
+// GET /api/streamer/levels - Obtener todos los niveles globales de streamer
+router.get('/levels', (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    levels: LEVELS
+  });
 });
 
 export default router;

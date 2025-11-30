@@ -104,15 +104,10 @@ router.post('/send', authMiddleware, async (req: Request, res: Response) => {
                 },
             });
 
-            // c. Actualizar analíticas del streamer (monedasRecibidas)
-            await tx.analytics.upsert({
-                where: { streamerId: streamerId },
-                create: {
-                    streamerId: streamerId,
-                    monedasRecibidas: gift.costo,
-                    horasTransmitidas: 0,
-                },
-                update: {
+            // c. Actualizar analíticas del streamer (monedasRecibidas en User)
+            await tx.user.update({
+                where: { id: streamerId },
+                data: {
                     monedasRecibidas: { increment: gift.costo },
                 },
             });

@@ -11,20 +11,25 @@ router.get('/analytics', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'No autenticado' });
     }
 
-    let analytics = await prisma.analytics.findUnique({
-      where: { streamerId: req.user.userId },
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: {
+        streamingHours: true,
+        monedasRecibidas: true
+      }
     });
 
-    // Si no existe, crear una nueva
-    if (!analytics) {
-      analytics = await prisma.analytics.create({
-        data: {
-          streamerId: req.user.userId,
-          horasTransmitidas: 0,
-          monedasRecibidas: 0,
-        },
-      });
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
     }
+
+    // Mantener estructura de respuesta para compatibilidad frontend
+    const analytics = {
+      id: 'user-analytics', // Dummy ID
+      streamerId: req.user.userId,
+      horasTransmitidas: user.streamingHours || 0,
+      monedasRecibidas: user.monedasRecibidas || 0
+    };
 
     return res.status(200).json({ success: true, analytics });
   } catch (error) {

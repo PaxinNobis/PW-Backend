@@ -30,12 +30,13 @@ model User {
 
   // --- Datos de Streamer ---
   streamingHours Float? @default(0) // Horas de streaming acumuladas
+  monedasRecibidas Int? @default(0) // Total de monedas recibidas como streamer
   currentLevelId String? // Nivel actual del streamer
   currentLevel   StreamerLevel? @relation(fields: [currentLevelId], references: [id])
 
   // --- Relaciones de Streamer ---
   streams          Stream[] // Un usuario (streamer) puede tener múltiples streams (historial)
-  analytics        Analytics? // Analíticas del streamer
+  // analytics        Analytics? // Analíticas del streamer (Eliminado)
   customGifts      Gift[] // Regalos personalizados del streamer
   loyaltyLevels    LoyaltyLevel[] // Niveles de lealtad del streamer
   receivedMessages ChatMessage[] @relation("ChatMessages") // Mensajes recibidos en su chat
@@ -147,17 +148,7 @@ model ChatMessage {
 
 // --- Modelos del Panel de Creador ---
 
-// Para Analiticas.tsx
-model Analytics {
-  id                String @id @default(uuid())
-  horasTransmitidas Float  @default(0)
-  monedasRecibidas  Int    @default(0)
 
-  streamer   User   @relation(fields: [streamerId], references: [id])
-  streamerId String @unique
-
-  @@map("analytics")
-}
 
 // Para GestionRegalos.tsx
 model Gift {
