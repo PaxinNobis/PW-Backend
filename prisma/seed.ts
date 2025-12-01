@@ -631,9 +631,27 @@ async function main() {
 
   // Limpiar base de datos completa para evitar duplicados y estados corruptos
   console.log('Limpiando base de datos...');
+
+  // 1. Tablas dependientes (con FKs)
+  await prisma.chatMessage.deleteMany({});
+  await prisma.activeViewer.deleteMany({});
+  await prisma.userLoyaltyLevel.deleteMany({});
+  await prisma.userPoints.deleteMany({});
+  await prisma.pointsHistory.deleteMany({});
+  await prisma.userMedal.deleteMany({});
+  await prisma.medal.deleteMany({});
+  await prisma.clip.deleteMany({});
+  await prisma.friendship.deleteMany({});
+  await prisma.friendRequest.deleteMany({});
+  await prisma.notification.deleteMany({});
+  await prisma.transaction.deleteMany({});
+  await prisma.userSocialLinks.deleteMany({});
+
+  // 2. Tablas principales
   await prisma.stream.deleteMany({});
   await prisma.gift.deleteMany({});
   await prisma.loyaltyLevel.deleteMany({});
+  await prisma.loyaltyLevelTemplate.deleteMany({}); // Limpiar plantillas
   await prisma.coinPack.deleteMany({});
   await prisma.user.deleteMany({});
   await prisma.game.deleteMany({});
@@ -643,6 +661,25 @@ async function main() {
   console.log('Games Data:', gamesData.length);
   console.log('Tags Data:', tagsData.length);
   console.log('Streams Data:', streamsData.length);
+
+  // Crear Plantillas de Niveles de Lealtad
+  const loyaltyTemplates = [
+    { id: 1, level: "Plutón", foto: "https://res.cloudinary.com/djiitravd/image/upload/v1764551537/Pluto_wawp5a.png" },
+    { id: 2, level: "Mercurio", foto: "https://res.cloudinary.com/djiitravd/image/upload/v1764551537/Mercury_dkt5ed.png" },
+    { id: 3, level: "Marte", foto: "https://res.cloudinary.com/djiitravd/image/upload/v1764551537/Mars_ohk9gd.png" },
+    { id: 4, level: "Venus", foto: "https://res.cloudinary.com/djiitravd/image/upload/v1764551537/Venus_kxgluz.png" },
+    { id: 5, level: "Tierra", foto: "https://res.cloudinary.com/djiitravd/image/upload/v1764551538/Earth_jgygvy.png" },
+    { id: 6, level: "Neptuno", foto: "https://res.cloudinary.com/djiitravd/image/upload/v1764551537/Neptune_pneupo.png" },
+    { id: 7, level: "Urano", foto: "https://res.cloudinary.com/djiitravd/image/upload/v1764551537/Uranus_sdtkd8.png" },
+    { id: 8, level: "Saturno", foto: "https://res.cloudinary.com/djiitravd/image/upload/v1764551538/Saturn_g9x6ti.png" },
+    { id: 9, level: "Júpiter", foto: "https://res.cloudinary.com/djiitravd/image/upload/v1764551538/Jupyter_zitxp8.png" },
+    { id: 10, level: "Sol", foto: "https://res.cloudinary.com/djiitravd/image/upload/v1764551538/Sun_fqf8jz.png" }
+  ];
+
+  await prisma.loyaltyLevelTemplate.createMany({
+    data: loyaltyTemplates
+  });
+  console.log('Plantillas de niveles de lealtad creadas:', loyaltyTemplates.length);
 
   // Crear tags
   await prisma.tag.createMany({
@@ -821,13 +858,19 @@ async function main() {
 
     await prisma.loyaltyLevel.createMany({
       data: [
-        { nombre: 'Novato', puntosRequeridos: 10, recompensa: 'Emblema Novato', streamerId: streamer.id },
-        { nombre: 'Fan', puntosRequeridos: 20, recompensa: 'Emblema Fan', streamerId: streamer.id },
-        { nombre: 'Super Fan', puntosRequeridos: 30, recompensa: 'Emblema Super Fan', streamerId: streamer.id },
-        { nombre: 'Leyenda', puntosRequeridos: 40, recompensa: 'Emblema Leyenda', streamerId: streamer.id },
+        { nombre: 'Plutón', puntosRequeridos: 10, recompensa: 'Emblema Plutón', image: 'https://res.cloudinary.com/djiitravd/image/upload/v1764551537/Pluto_wawp5a.png', streamerId: streamer.id },
+        { nombre: 'Mercurio', puntosRequeridos: 20, recompensa: 'Emblema Mercurio', image: 'https://res.cloudinary.com/djiitravd/image/upload/v1764551537/Mercury_dkt5ed.png', streamerId: streamer.id },
+        { nombre: 'Marte', puntosRequeridos: 30, recompensa: 'Emblema Marte', image: 'https://res.cloudinary.com/djiitravd/image/upload/v1764551537/Mars_ohk9gd.png', streamerId: streamer.id },
+        { nombre: 'Venus', puntosRequeridos: 40, recompensa: 'Emblema Venus', image: 'https://res.cloudinary.com/djiitravd/image/upload/v1764551537/Venus_kxgluz.png', streamerId: streamer.id },
+        { nombre: 'Tierra', puntosRequeridos: 50, recompensa: 'Emblema Tierra', image: 'https://res.cloudinary.com/djiitravd/image/upload/v1764551538/Earth_jgygvy.png', streamerId: streamer.id },
+        { nombre: 'Neptuno', puntosRequeridos: 60, recompensa: 'Emblema Neptuno', image: 'https://res.cloudinary.com/djiitravd/image/upload/v1764551537/Neptune_pneupo.png', streamerId: streamer.id },
+        { nombre: 'Urano', puntosRequeridos: 70, recompensa: 'Emblema Urano', image: 'https://res.cloudinary.com/djiitravd/image/upload/v1764551537/Uranus_sdtkd8.png', streamerId: streamer.id },
+        { nombre: 'Saturno', puntosRequeridos: 80, recompensa: 'Emblema Saturno', image: 'https://res.cloudinary.com/djiitravd/image/upload/v1764551538/Saturn_g9x6ti.png', streamerId: streamer.id },
+        { nombre: 'Júpiter', puntosRequeridos: 90, recompensa: 'Emblema Júpiter', image: 'https://res.cloudinary.com/djiitravd/image/upload/v1764551538/Jupyter_zitxp8.png', streamerId: streamer.id },
+        { nombre: 'Sol', puntosRequeridos: 100, recompensa: 'Emblema Sol', image: 'https://res.cloudinary.com/djiitravd/image/upload/v1764551538/Sun_fqf8jz.png', streamerId: streamer.id },
       ],
     });
-    levelsCreated += 4;
+    levelsCreated += 10;
   }
   console.log(`Niveles de lealtad creados: ${levelsCreated}`);
 

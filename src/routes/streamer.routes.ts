@@ -305,6 +305,70 @@ router.get('/:streamerId/loyalty-levels', async (req: Request, res: Response) =>
   }
 });
 
+// GET /api/streamer/loyalty-templates - Obtener plantillas de niveles de lealtad
+router.get('/loyalty-templates', async (req: Request, res: Response) => {
+  try {
+    const templates = await prisma.loyaltyLevelTemplate.findMany({
+      orderBy: { id: 'asc' }
+    });
+
+    res.json({
+      success: true,
+      templates
+    });
+  } catch (error) {
+    console.error('Error al obtener plantillas de niveles:', error);
+    res.status(500).json({ error: 'Error al obtener plantillas' });
+  }
+});
+
+// PUT /api/streamer/loyalty-levels - Actualizar niveles de lealtad del streamer
+router.put('/loyalty-levels', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'No autenticado' });
+    }
+
+    const userId = req.user.userId;
+    const { levels } = req.body; // Array de { name, puntosRequeridos, recompensa, image }
+
+    if (!Array.isArray(levels)) {
+      return res.status(400).json({ error: 'Se requiere un array de niveles' });
+    }
+
+    // Validar niveles
+    for (const level of levels) {
+      if (!level.name || typeof level.puntosRequeridos !== 'number' || !level.recompensa) {
+        return res.status(400).json({ error: 'Cada nivel debe tener nombre, puntosRequeridos y recompensa' });
+      }
+    }
+
+    // Transacción: Borrar anteriores y crear nuevos
+    await prisma.$transaction(async (tx) => {
+      // 1. Borrar niveles existentes del streamer
+      await tx.loyaltyLevel.deleteMany({
+        where: { streamerId: userId }
+      });
+
+      // 2. Crear nuevos niveles
+      await tx.loyaltyLevel.createMany({
+        data: levels.map((l: any) => ({
+          streamerId: userId,
+          nombre: l.name,
+          puntosRequeridos: l.puntosRequeridos,
+          recompensa: l.recompensa,
+          image: l.image || null // Guardar imagen si viene
+        }))
+      });
+    });
+
+    return res.status(200).json({ success: true, message: 'Niveles de lealtad actualizados' });
+  } catch (error) {
+    console.error('Error al actualizar niveles de lealtad:', error);
+    res.status(500).json({ error: 'Error al actualizar niveles de lealtad' });
+  }
+});
+
 // PUT /api/streamer/settings - Actualizar configuración del stream
 router.put('/settings', async (req: Request, res: Response) => {
   try {

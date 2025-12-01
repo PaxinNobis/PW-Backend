@@ -169,6 +169,7 @@ model LoyaltyLevel {
   nombre           String
   puntosRequeridos Int
   recompensa       String
+  image            String? // URL de la imagen del nivel
 
   streamer   User   @relation(fields: [streamerId], references: [id])
   streamerId String
@@ -176,6 +177,15 @@ model LoyaltyLevel {
   userLevels UserLoyaltyLevel[]
 
   @@map("loyalty_levels")
+}
+
+// Plantillas de niveles de lealtad (Globales)
+model LoyaltyLevelTemplate {
+  id    Int    @id @default(autoincrement())
+  level String
+  foto  String
+
+  @@map("loyalty_level_templates")
 }
 
 // Persistencia de niveles de lealtad por usuario
