@@ -25,6 +25,24 @@ router.post('/register', async (req: Request, res: Response) => {
   // Hashear contraseña
   const hashedPassword = await bcrypt.hash(password, 10);
 
+  // Obtener plantillas de niveles de lealtad
+  const templates = await prisma.loyaltyLevelTemplate.findMany({
+    orderBy: { id: 'asc' }
+  });
+
+  // Si no hay plantillas (caso raro), usar fallback
+  const loyaltyLevelsData = templates.length > 0
+    ? templates.map(t => ({
+      nombre: t.level,
+      puntosRequeridos: t.id * 10, // 10, 20, 30...
+      recompensa: `Emblema ${t.level}`,
+      image: t.foto
+    }))
+    : [
+      { nombre: 'Novato', puntosRequeridos: 10, recompensa: 'Emblema Novato' },
+      { nombre: 'Fan', puntosRequeridos: 20, recompensa: 'Emblema Fan' }
+    ];
+
   // Crear usuario
   const user = await prisma.user.create({
     data: {
@@ -36,12 +54,7 @@ router.post('/register', async (req: Request, res: Response) => {
       coins: 0,
       // Crear niveles de lealtad por defecto para este usuario (como streamer)
       loyaltyLevels: {
-        create: [
-          { nombre: 'Novato', puntosRequeridos: 10, recompensa: 'Emblema Novato' },
-          { nombre: 'Fan', puntosRequeridos: 20, recompensa: 'Emblema Fan' },
-          { nombre: 'Super Fan', puntosRequeridos: 30, recompensa: 'Emblema Super Fan' },
-          { nombre: 'Leyenda', puntosRequeridos: 40, recompensa: 'Emblema Leyenda' },
-        ]
+        create: loyaltyLevelsData
       }
     },
   });
